@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Scissors, Loader, Download, Sparkles, Play, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiClient } from '@/lib/api-client';
+import { VideoPlayer } from '@/components/VideoPlayer';
 import clsx from 'clsx';
 
 interface HighlightSegment {
@@ -181,6 +182,12 @@ export function HighlightFeature() {
                             {result.duration?.toFixed(1)}s
                         </div>
                     </div>
+
+                    {result.output_url && (
+                        <div className="overflow-hidden border border-white/10 rounded-xl bg-black/40">
+                            <VideoPlayer src={result.output_url} title="Xem trước highlight" showDownload={false} />
+                        </div>
+                    )}
 
                     {/* Highlights list */}
                     {result.highlights && result.highlights.length > 0 && (
