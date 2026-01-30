@@ -48,6 +48,7 @@ from app.services.audio_processor import audio_processor
 from app.services. text_overlay_engine import text_overlay_engine, TextStyle
 from app.services. video_editor import video_editor
 from app.services.storage.google_drive import google_drive_service
+from app.services.progress_tracker import ProgressTracker
 from app.utils.file_utils import ensure_dirs
 
 # YouTube Analyzer imports
@@ -69,8 +70,9 @@ async def health_check() -> HealthResponse:
         redis_ok = False
 
     try:
+        from sqlalchemy import text
         db = SessionLocal()
-        db. execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_ok = True
         db.close()
     except:
@@ -804,6 +806,20 @@ async def process_reup_video(
         db.commit()
         db.close()
 
+        # Initialize progress tracking
+        # Note: We need a new session for the tracker or pass the job object
+        db_tracker = SessionLocal()
+        try:
+            from app.services.progress_tracker import ProgressTracker
+            tracker = ProgressTracker(db_tracker)
+            tracker.start_tracking(
+                job_id, 
+                file_size_mb=0, # Will be updated in background task
+                options=request.dict()
+            )
+        finally:
+            db_tracker.close()
+
         # Queue processing
         background_tasks.add_task(
             _process_reup_video_task,
@@ -873,23 +889,59 @@ async def get_job_status(job_id: str):
 
         output_links = []
         if job.output_path:
-            output_links. append(f"/api/videos/download/{job_id}")
+            output_links.append(f"/api/videos/download/{job_id}")
 
         return {
             "id": job.id,
             "title": job.title,
-            "status": job.status. value if hasattr(job.status, 'value') else str(job.status),
+            "status": job.status.value if hasattr(job.status, 'value') else str(job.status),
             "progress": job.progress,
             "current_step": job.current_step,
             "created_at": job.created_at,
             "output_links": output_links,
-            "error_message": job.error_message,
+            "error": job.error_message,
+            "detailed_status": {
+                "file_size_mb": job.file_size_mb,
+                "estimated_duration": job.estimated_duration_seconds,
+                "processing_start": job.processing_start_time,
+                "current_service": job.current_api_service,
+                "steps": job.steps_completed
+            }
         }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting job status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@router.get("/videos/job/{job_id}/progress")
+async def get_job_progress(job_id: str):
+    """Get detailed job progress for UI"""
+    db = SessionLocal()
+    try:
+        job = db.query(VideoJob).filter(VideoJob.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+            
+        # Calculate time remaining
+        time_remaining = None
+        if job.processing_start_time and job.estimated_duration_seconds:
+            elapsed = (datetime.now(timezone.utc) - job.processing_start_time).total_seconds()
+            time_remaining = max(0, job.estimated_duration_seconds - elapsed)
+
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "progress_percent": job.progress,
+            "current_step": job.current_step,
+            "current_service": job.current_api_service,
+            "time_elapsed": (datetime.now(timezone.utc) - job.processing_start_time).total_seconds() if job.processing_start_time else 0,
+            "time_remaining_est": time_remaining,
+            "file_size_mb": job.file_size_mb,
+            "steps_history": job.steps_completed
+        }
     finally:
         db.close()
 
@@ -925,242 +977,234 @@ async def download_video(job_id: str):
 # ==================== HELPER FUNCTIONS ====================
 
 async def _process_reup_video_task(job_id: str, request: VideoCreateRequest):
-    """Background task for reup video processing with detailed status tracking"""
+    """
+    Background task to process video reup with "Affiliate/Fair Use" workflow:
+    1. Download (Watermark removal handled by downloader if supported)
+    2. Analyze/Transcribe (optional)
+    3. AI Rewrite/Commentary (Reviewer Style)
+    4. Visual Processing (Speed, Crop 9:16, Filters)
+    5. Merge & Render
+    """
     db = SessionLocal()
+    tracker = None
     try:
-        job = db.query(VideoJob).filter(VideoJob.id == job_id).first()
-
-        def update_status(step: str, progress: int = 0):
-            """Helper to update job status"""
-            job.current_step = step
-            job.progress = progress
-            db.commit()
-            logger.info(f"Job {job_id}: {step} ({progress}%)")
-
-        # Step 1: Downloading
-        job.status = JobStatus.DOWNLOADING
-        update_status("🔄 Đang tải video từ nguồn...", 5)
-
-        downloader = VideoDownloader()
-        try:
-            download_result = await downloader.download(
-                request.source_url,
-                Path(settings.TEMP_DIR),
-            )
-            video_path = Path(download_result["path"])
-            update_status(f"✅ Đã tải video: {download_result.get('title', 'video')[:50]}", 20)
-        except Exception as e:
-            update_status(f"❌ Lỗi tải video: {str(e)[:80]}", 0)
-            raise
-
-        # Step 2: Generate TTS narration if requested
-        text_segments = []
+        from app.services.progress_tracker import ProgressTracker
+        tracker = ProgressTracker(db)
+        
+        # --- 1. HARVEST: Download Video ---
+        tracker.update_progress(job_id, "Download starting...", 5)
+        start_time = time.time()
+        
+        video_path = None
+        audio_path = None
         new_audio = None
-        narration = None # Initialize narration here
+        
+        try:
+            downloader = VideoDownloader()
+            # Use temp dir for download
+            _dirs = ensure_dirs()
+            temp_dir = _dirs[0] if isinstance(_dirs, (list, tuple)) else _dirs
+            
+            video_info = await downloader.download(request.source_url, output_dir=temp_dir)
+            video_path = Path(video_info["path"])
+            
+            # Estimate size
+            file_size_mb = 0
+            if video_path.exists():
+                file_size_mb = video_path.stat().st_size / (1024 * 1024)
 
-        if request.add_ai_narration:
-            job.status = JobStatus.PROCESSING
-            update_status("🧠 Đang phân tích và viết lại nội dung...", 30)
-            try:
-                # Log which provider will be used
-                provider_name = request.ai_provider or settings.AI_PROVIDER
-                logger.info(f"[NARRATION] Starting narration process with: {provider_name}")
-                story_gen = await get_story_generator(provider_name)
-                
-                # NEW: Transcription-based Rewrite Logic
-                if request.rewrite_from_original:
-                    try:
-                        update_status("📻 Đang trích xuất âm thanh gốc...", 32)
-                        original_audio = await audio_processor.extract_audio(video_path)
-                        
-                        update_status("📝 Đang chuyển âm thanh thành văn bản...", 35)
-                        transcriber = await get_transcription_provider(provider_name)
-                        transcription_result = await transcriber.transcribe(original_audio)
-                        original_text = transcription_result.get("text", "")
-                        
-                        if original_text and len(original_text) > 10:
-                            update_status("✍️ Đang tối ưu nội dung chuẩn...", 38)
-                            rewrite_result = await story_gen.rewrite_transcript(
-                                original_text=original_text,
-                                segments=transcription_result.get("segments", []),
-                                style=request.narration_style or "viral"
-                            )
-                            narration = rewrite_result.get("rewritten_text")
-                            text_segments = rewrite_result.get("segments", [])
-                            logger.info(f"[REWRITE] Success. Chars: {len(narration) if narration else 0}, Segments: {len(text_segments)}")
-                        else:
-                            logger.warning("[REWRITE] Original text too short or empty, falling back to topic-based")
-                    except Exception as e:
-                        logger.error(f"[REWRITE] Failed: {e}")
-                        update_status("⚠️ Không thể transcribe, dùng AI tạo nội dung mới", 35)
-                
-                # Fallback to Topic-based generation if transcription failed or disabled
-                if not narration:
-                    logger.info("[NARRATION] Generating from topic/metadata...")
-                    narration = await story_gen.generate_narration(
-                        topic=request.description or request.title or "Nội dung video hấp dẫn",
-                        duration=request.duration,
-                        tone=request.narration_style or "professional",
-                    )
-                
-                if narration:
-                    update_status("✅ Đã chuẩn bị nội dung chuẩn", 40)
-                    logger.info(f"[NARRATION] Final script prepared: {len(narration)} chars")
-                
-            except Exception as e:
-                logger.error(f"[NARRATION] Overall AI error: {e}")
-                update_status("⚠️ Lỗi AI, thử dùng mode cơ bản...", 35)
-                # Final fallback
+            # Initialize tracking
+            tracker.start_tracking(job_id, file_size_mb=file_size_mb, options=request.dict())
+            tracker.log_step_completion(job_id, "download_video", int((time.time() - start_time) * 1000), 
+                                      {"size_mb": round(file_size_mb, 2), "title": video_info.get("title")})
+            logger.info(f"Downloaded video to {video_path} ({file_size_mb:.2f} MB)")
+            
+        except Exception as e:
+            logger.error(f"Download failed: {e}")
+            if tracker:
+                tracker.fail_job(job_id, f"Lỗi tải video: {str(e)[:100]}", {"url": request.source_url})
+            return
+
+        # --- 2. PREP: Extract Audio ---
+        tracker.update_progress(job_id, "Extracting audio...", 15)
+        step_start = time.time()
+        try:
+            audio_path = await audio_processor.extract_audio(video_path)
+            tracker.log_step_completion(job_id, "extract_audio", int((time.time() - step_start) * 1000))
+        except Exception as e:
+            logger.warning(f"Audio extraction warning: {e}")
+
+        # --- 3. CREATIVE: AI Content (Review/Commentary/Rewrite) ---
+        text_segments = []
+        narration = None
+
+        if request.rewrite_from_original or request.add_subtitles or request.add_ai_narration:
+            tracker.update_progress(job_id, "Creating AI content...", 25, current_service="ai_pipeline")
+            ai_start = time.time()
+            
+            # A. Transcribe & Rewrite (Affiliate Review Style)
+            if request.rewrite_from_original:
                 try:
-                    from app.services.ai.story_generator import SimpleStoryGenerator
-                    simple_gen = SimpleStoryGenerator()
-                    narration = await simple_gen.generate_narration(
-                        topic=request.title or "Video Content",
+                    tracker.update_progress(job_id, "Transcribing and rewriting...", 30, current_service="transcription")
+                    
+                    # Real Transcription logic
+                    transcriber = await get_transcription_provider(request.ai_provider or settings.AI_PROVIDER)
+                    transcription_result = await transcriber.transcribe(audio_path)
+                    original_text = transcription_result.get("text", "")
+                    
+                    if not original_text:
+                         logger.warning("No text extracted from original video, using default prompt")
+                         original_text = "Nội dung video ngắn."
+                    
+                    # Rewrite as a Reviewer
+                    logger.info("[AI] Rewriting content for fair use...")
+                    story_gen = await get_story_generator(request.ai_provider or settings.AI_PROVIDER)
+                    
+                    # Affiliate/Review Prompt Strategy
+                    rewrite_prompt = (
+                        f"Đóng vai 1 reviewer KOL, hãy viết lại kịch bản ngắn gọn, hấp dẫn cho video này. "
+                        f"Phong cách: {request.narration_style or 'sôi động, chốt đơn'}. "
+                        f"Tập trung vào lợi ích sản phẩm/nội dung. "
+                        f"Kêu gọi hành động (CTA) ở cuối. "
+                        f"Nội dung gốc: {original_text[:1000]}"
+                    )
+                    
+                    narration = await story_gen.generate_narration(
+                         topic=rewrite_prompt,
+                         duration=request.duration,
+                         tone=request.narration_style or "viral"
+                    )
+                    
+                    tracker.log_step_completion(job_id, "rewrite_content", int((time.time() - ai_start) * 1000))
+
+                except Exception as e:
+                    logger.error(f"Rewrite failed: {e}")
+                    tracker.update_progress(job_id, "Rewrite failed, using fallback...", 35)
+
+            # B. Generate from Scratch (Fallback)
+            if request.add_ai_narration and not narration:
+                tracker.update_progress(job_id, "Writing script...", 35)
+                try:
+                    story_gen = await get_story_generator(request.ai_provider or settings.AI_PROVIDER)
+                    narration = await story_gen.generate_narration(
+                        topic=request.description or request.title or "Review sản phẩm hot trend",
                         duration=request.duration,
                         tone=request.narration_style or "professional"
                     )
-                except Exception:
-                    narration = None
+                except Exception as e:
+                    logger.error(f"Generation failed: {e}")
 
-            if narration:
-                update_status("🔊 Đang chuyển văn bản thành giọng nói (TTS)...", 45)
+            # C. TTS (Voiceover)
+            if request.add_ai_narration and narration:
+                tracker.update_progress(job_id, "Generating voiceover...", 45, current_service="tts_engine")
                 try:
-                    logger.info("[TTS] Getting TTS provider...")
                     tts = await get_tts_provider(request.ai_provider or settings.TTS_PROVIDER)
-                    logger.info(f"[TTS] Got provider: {type(tts).__name__}")
-                    
                     output_audio_path = Path(settings.TEMP_DIR) / f"narration_{job_id}.mp3"
-                    logger.info(f"[TTS] Synthesizing to: {output_audio_path}")
-                    # Generate audio
+                    
                     new_audio, timing = await tts.synthesize(
                         text=narration,
                         voice=request.tts_voice,
                         output_path=output_audio_path,
-                        with_timing=True # Request timing information
+                        with_timing=True
                     )
                     
-                    if new_audio and new_audio.exists():
-                        audio_size = new_audio.stat().st_size
-                        logger.info(f"[TTS] Audio created: {new_audio} ({audio_size} bytes)")
-                        update_status("✅ Đã tạo audio TTS", 55)
+                    if new_audio:
+                        tracker.log_step_completion(job_id, "generate_tts", int((time.time() - ai_start) * 1000))
                         
-                        # Use timing for segments if available, otherwise fall back to simple segmentation
-                        if timing:
-                            # Apply Shorts styling to granular word timing
+                        # D. Subtitles (Shorts/Reels Style)
+                        if timing and request.add_text_overlay:
                             text_segments = [
-                                {**t, "style": {"font_size": 80, "position": "center"}} 
+                                {**t, "style": {"font_size": 80, "position": "center", "color": "yellow", "stroke_color": "black", "stroke_width": 2}} 
                                 for t in timing
                             ]
-                            logger.info(f"[TTS] Created {len(text_segments)} subtitle segments from timing")
-                        else:
-                            text_segments = video_editor._create_subtitle_segments(narration)
-                            logger.info(f"[TTS] Created {len(text_segments)} subtitle segments from text")
-                    else:
-                        logger.error(f"[TTS] Audio file not created or missing")
-                        new_audio = None
-                        
+                        elif request.add_text_overlay:
+                             text_segments = video_editor._create_subtitle_segments(narration)
+
                 except Exception as e:
-                    logger.error(f"[TTS] Error: {type(e).__name__}: {e}")
-                    update_status(f"⚠️ Lỗi TTS: {str(e)[:80]}", 50)
-                    new_audio = None
+                    logger.error(f"TTS Error: {e}")
+                    tracker.update_progress(job_id, f"Voice error: {str(e)[:50]}", 45)
 
-        # Step 3: Get video info
-        job.status = JobStatus.PROCESSING
-        update_status("📊 Đang phân tích thông tin video...", 60)
-
+        # --- 4. EDITING: Render Video ---
+        tracker.update_progress(job_id, "Rendering video...", 60, current_service="ffmpeg_render")
+        render_start = time.time()
+        
+        final_output_path = Path(settings.PROCESSED_DIR) / f"reup_{job_id}.mp4"
+        
         try:
-            from app.utils.ffmpeg_ops import ffmpeg_ops
-            video_info = await ffmpeg_ops.get_video_info(video_path)
-            update_status(f"✅ Video: {video_info.get('width')}x{video_info.get('height')}, {video_info.get('duration', 0):.1f}s", 65)
-        except Exception as e:
-            error_msg = f"❌ Lỗi FFprobe - Không thể đọc video: {str(e)[:70]}"
-            update_status(error_msg, 60)
-            job.status = JobStatus.FAILED
-            job.error_message = error_msg
-            db.commit()
-            raise
-
-        # Step 4: Process video
-        update_status("🎬 Đang xử lý và chỉnh sửa video...", 70)
-
-        try:
+            # Main processing call - supports crop/speed/watermark removal
             result = await video_editor.process_video_for_reup(
                 video_path=video_path,
                 target_duration=request.duration,
-                target_platform=request.target_platform,
+                target_platform=request.target_platform, # 'reels', 'tiktok', etc.
                 add_text=request.add_text_overlay and len(text_segments) > 0,
                 text_segments=text_segments if request.add_text_overlay else None,
-                new_audio_path=new_audio,
-                output_path=Path(settings.PROCESSED_DIR) / f"reup_{job_id}.mp4",
+                new_audio_path=new_audio or audio_path, 
+                output_path=final_output_path,
                 bgm_style=request.bgm_style if request.add_background_music else None,
-                normalize_audio=request.normalize_audio,
+                normalize_audio=True, 
+                remove_watermark=request.remove_watermark # Critical for reup
+                # TODO: Pass parameters for logo/intro/outro if added to Request schema
             )
-        except Exception as e:
-            error_msg = f"❌ Lỗi xử lý video: {str(e)[:80]}"
-            update_status(error_msg, 70)
-            job.status = JobStatus.FAILED
-            job.error_message = error_msg
-            db.commit()
-            raise
-
-        # Step 5: Finalize
-        if result.get("success"):
-            job.status = JobStatus.COMPLETED
-            job.output_path = result["output_path"]
-            job.output_filename = f"reup_{job_id}.mp4"
             
-            # Archive to Google Drive
-            try:
-                update_status("📤 Đang lưu trữ lên Google Drive...", 95)
-                uploaded_link = google_drive_service.upload_file(result["output_path"])
-                if uploaded_link:
-                    logger.info(f"Archived reup video to Drive: {uploaded_link}")
-            except Exception as e:
-                logger.error(f"Drive archive failed: {e}")
+            if result.get("success"):
+                tracker.log_step_completion(job_id, "render_video", int((time.time() - render_start) * 1000))
+                
+                # --- 5. FINISH: Archive/Upload ---
+                tracker.update_progress(job_id, "Completing and archiving...", 90)
+                try:
+                    uploaded_link = google_drive_service.upload_file(result["output_path"])
+                    if uploaded_link:
+                        logger.info(f"Archived to Drive: {uploaded_link}")
+                except Exception as e:
+                    logger.error(f"Archive failed: {e}")
 
-            update_status("✅ Hoàn thành! Video đã sẵn sàng tải xuống và đã lưu Drive.", 100)
-        else:
-            error_msg = result.get("error", "Unknown error")
-            job.status = JobStatus.FAILED
-            job.error_message = error_msg
-            update_status(f"❌ Thất bại: {error_msg[:100]}", 0)
+                # Update DB
+                job_record = db.query(VideoJob).filter(VideoJob.id == job_id).first()
+                if job_record:
+                    job_record.output_path = str(final_output_path)
+                    job_record.output_filename = final_output_path.name
+                
+                tracker.complete_job(job_id)
+            else:
+                 tracker.fail_job(job_id, f"Render failed: {result.get('error')}")
 
-        db.commit()
+        except Exception as e:
+             tracker.fail_job(job_id, f"Render error: {str(e)}")
+
+        # --- 6. CLEANUP ---
+        if video_path and video_path.exists(): video_path.unlink()
+        if audio_path and audio_path.exists(): audio_path.unlink()
+        if new_audio and new_audio.exists(): new_audio.unlink()
 
     except Exception as e:
-        logger.error(f"Reup processing error: {e}", exc_info=True)
-        if job:
-            job.status = JobStatus.FAILED
-            job.error_message = str(e)[:500]
-            job.current_step = f"❌ Lỗi: {str(e)[:100]}"
-            db.commit()
+        logger.error(f"Reup processing fatal error: {e}", exc_info=True)
+        if tracker:
+            tracker.fail_job(job_id, f"System error: {str(e)}", {"step": "fatal_crash"})
     finally:
         db.close()
 
 
+
+
 async def _process_story_video_task(job_id: str, request: StoryVideoRequest):
-    """Background task for story video processing"""
+    """Background task for story video processing with enhanced tracking"""
     db = SessionLocal()
+    tracker = ProgressTracker(db)
+    
+    video_path = None
+    audio_path = None
+    new_audio = None
+
     try:
-        job = db.query(VideoJob).filter(VideoJob.id == job_id).first()
-
-        # Update status
-        job.status = JobStatus.DOWNLOADING
-        job. current_step = "Downloading video"
-        db.commit()
-
-        # Download video
+        # --- 1. DOWNLOAD ---
+        tracker.update_progress(job_id, "📥 Đang tải video nền...", 10, current_service="downloader")
         downloader = VideoDownloader()
-        download_result = await downloader.download(
-            request.source_url,
-            Path(settings. TEMP_DIR),
-        )
+        download_result = await downloader.download(request.source_url, Path(settings.TEMP_DIR))
         video_path = Path(download_result["path"])
 
-        # Generate story
-        job.current_step = "Generating story"
-        db.commit()
-
+        # --- 2. STORY GENERATION ---
+        tracker.update_progress(job_id, "✍️ Đang lên ý tưởng kịch bản Story...", 30, current_service="ai_pipeline")
+        
         story_gen = await get_story_generator(request.ai_provider or settings.AI_PROVIDER)
         story = await story_gen.generate_story(
             prompt=request.story_topic,
@@ -1168,57 +1212,67 @@ async def _process_story_video_task(job_id: str, request: StoryVideoRequest):
             max_length=int(request.duration * 2.5),
         )
 
-        # Generate TTS for story
-        job.current_step = "Generating narration"
-        db.commit()
-
+        # --- 3. TTS & TIMING ---
+        tracker.update_progress(job_id, "🗣️ Đang lồng tiếng AI...", 50, current_service="tts_engine")
+        
         tts = await get_tts_provider(request.ai_provider or settings.AI_PROVIDER)
-        audio_path, timing = await tts.synthesize(
+        new_audio, timing = await tts.synthesize(
             text=story,
             voice=request.tts_voice,
-            output_path=Path(settings.TEMP_DIR) / f"story_audio_{job_id}.mp3",
+            output_path=Path(settings.TEMP_DIR) / f"story_{job_id}.mp3",
             with_timing=True
         )
 
-        # Use improved timing if available
+        # Build segments for overlay
         if timing:
             text_segments = timing
         else:
             text_segments = video_editor._create_subtitle_segments(story)
 
-        # Generate video
-        job.current_step = "Creating video"
-        db.commit()
-
-        output_path = await video_editor.generate_story_video(
+        # --- 4. RENDERING ---
+        tracker.update_progress(job_id, "🎬 Đang dựng video Story...", 70, current_service="ffmpeg_render")
+        
+        final_output_path = Path(settings.PROCESSED_DIR) / f"story_{job_id}.mp4"
+        
+        # Use common process_video_for_reup for consistent quality/fairuse
+        # but wrapping it in generate_story_video for story-specific logic if needed
+        # Or just call process_video_for_reup directly if it handles everything
+        result = await video_editor.generate_story_video(
             base_video_path=video_path,
             story_text=story,
-            audio_path=audio_path,
-            output_path=Path(settings.PROCESSED_DIR) / f"story_{job_id}.mp4",
+            audio_path=new_audio,
+            output_path=final_output_path,
             bgm_style=request.bgm_style if request.background_music else None,
             normalize_audio=request.normalize_audio,
         )
 
-        if output_path:
-            job.status = JobStatus.COMPLETED
-            job.output_path = str(output_path)
-            job.output_filename = f"story_{job_id}.mp4"
-            job.progress = 100
-            job.current_step = "Completed"
-        else: 
-            job.status = JobStatus.FAILED
-            job.error_message = "Failed to generate video"
-            job.current_step = "Failed"
+        if result:
+            # --- 5. FINISH ---
+            tracker.update_progress(job_id, "📤 Đang lưu trữ và hoàn tất...", 95)
+            try:
+                uploaded_link = google_drive_service.upload_file(final_output_path)
+                if uploaded_link:
+                    logger.info(f"Story archived to Drive: {uploaded_link}")
+            except Exception as e:
+                logger.error(f"Story archive failed: {e}")
 
-        db. commit()
+            # Update DB
+            job_record = db.query(VideoJob).filter(VideoJob.id == job_id).first()
+            if job_record:
+                job_record.output_path = str(final_output_path)
+                job_record.output_filename = final_output_path.name
+            
+            tracker.complete_job(job_id)
+        else:
+            tracker.fail_job(job_id, "Lỗi khi render video story")
 
     except Exception as e:
-        logger.error(f"Story video processing error: {e}")
-        job.status = JobStatus. FAILED
-        job.error_message = str(e)
-        job.current_step = "Error"
-        db.commit()
+        logger.error(f"Story processing error: {e}", exc_info=True)
+        tracker.fail_job(job_id, f"Lỗi xử lý Story: {str(e)}")
     finally:
+        # Cleanup
+        if video_path and video_path.exists(): video_path.unlink()
+        if new_audio and new_audio.exists(): new_audio.unlink()
         db.close()
 
 # ==================== STORY SERIES ====================
@@ -1260,68 +1314,53 @@ async def create_story_series(
 
 async def _process_series_video_task(job_id: str, request: SeriesCreateRequest):
     """
-    Background task to process video series
+    Background task to process video series with advanced tracking and fair use
     """
     db = SessionLocal()
-    job = db.query(VideoJob).filter(VideoJob.id == job_id).first()
+    tracker = ProgressTracker(db)
     
-    def update_status(status_msg, progress):
-        logger.info(f"[Job {job_id}] {status_msg} ({progress}%)")
-        job.status = JobStatus.PROCESSING
-        job.current_step = status_msg
-        job.progress = progress
-        job.updated_at = datetime.utcnow()
-        db.commit()
-
+    video_path = None
     try:
-        update_status("📥 Đang tải video gốc...", 10)
+        tracker.update_progress(job_id, "📥 Đang tải video gốc...", 10, current_service="downloader")
         
         # 1. Download Video
-        try:
-            downloader = VideoDownloader()
-            video_info = await downloader.download(request.source_url, output_dir=ensure_dirs()[0])
-            video_path = Path(video_info["path"])  # Convert to Path for consistency
-            logger.info(f"Downloaded video to {video_path}")
-        except Exception as e:
-            update_status(f"❌ Lỗi tải video: {str(e)}", 0)
-            job.status = JobStatus.FAILED
-            job.error_message = str(e)
-            db.commit()
-            return
-
+        downloader = VideoDownloader()
+        video_info = await downloader.download(request.source_url, output_dir=Path(settings.TEMP_DIR))
+        video_path = Path(video_info["path"])
+        
         # 2. Get Info & Calculate Splits
-        update_status("📏 Đang tính toán phân chia series...", 20)
-        video_info = await video_editor.get_video_info(video_path)
-        total_duration = int(video_info["duration"])
-        part_duration = total_duration // request.num_parts
+        tracker.update_progress(job_id, "📏 Đang phân tích video...", 15)
+        video_metadata = await ffmpeg_ops.get_video_info(video_path)
+        total_duration = float(video_metadata["duration"])
+        part_duration = total_duration / request.num_parts
         
         # 3. Generate Outline (AI)
-        update_status("🧠 AI đang lên kịch bản trọn bộ...", 25)
+        tracker.update_progress(job_id, "🧠 AI đang lên kịch bản trọn bộ...", 20, current_service="ai_pipeline")
         outline = await series_generator.generate_series_outline(
             topic=request.topic,
             num_parts=request.num_parts,
-            total_duration=total_duration,
+            total_duration=int(total_duration),
             style=request.voice_style
         )
-        logger.info(f"Series Outline: {outline}")
         
         # 4. Process Each Part
         generated_parts = []
         
         for i in range(request.num_parts):
             part_num = i + 1
-            update_status(f"🎬 Đang sản xuất Tập {part_num}/{request.num_parts}...", 30 + (i * 10))
+            progress_base = 25 + (i * (65 / request.num_parts))
+            
+            tracker.update_progress(job_id, f"🎬 Đang sản xuất Tập {part_num}/{request.num_parts}...", progress_base)
             
             # 4a. Cut Segment
             start_time = i * part_duration
             end_time = (i + 1) * part_duration if i < request.num_parts - 1 else total_duration
             
             part_video_path = Path(settings.TEMP_DIR) / f"{job_id}_part_{part_num}.mp4"
-            await video_editor.cut_video(
-                video_path, start_time, end_time, part_video_path
-            )
+            await ffmpeg_ops.cut_video(video_path, start_time, end_time, part_video_path)
             
-            # 4b. Generate Script
+            # 4b. Generate Script for Part
+            tracker.update_progress(job_id, f"📝 Viết kịch bản Tập {part_num}...", progress_base + 2)
             script = await series_generator.generate_part_script(
                 part_index=i,
                 total_parts=request.num_parts,
@@ -1330,6 +1369,7 @@ async def _process_series_video_task(job_id: str, request: SeriesCreateRequest):
             )
             
             # 4c. TTS
+            tracker.update_progress(job_id, f"🗣️ Lồng tiếng Tập {part_num}...", progress_base + 4, current_service="tts_engine")
             tts_provider = await get_tts_provider(request.tts_voice or settings.TTS_PROVIDER)
             audio_path = Path(settings.TEMP_DIR) / f"{job_id}_audio_part_{part_num}.mp3"
             await tts_provider.synthesize(
@@ -1342,11 +1382,11 @@ async def _process_series_video_task(job_id: str, request: SeriesCreateRequest):
             # 4d. Create Subtitles
             segments = video_editor._create_subtitle_segments(script)
             
-            # 4e. Merge (Audio + Video + Subs + BGM)
+            # 4e. Render Part (Fair Use applied here)
+            tracker.update_progress(job_id, f"⚡ Rendering Tập {part_num}...", progress_base + 7, current_service="ffmpeg_render")
             final_part_path = Path(settings.PROCESSED_DIR) / f"Series_{job_id}_Part_{part_num}.mp4"
             
-            # Process using main video editor flow
-            await video_editor.process_video_for_reup(
+            render_res = await video_editor.process_video_for_reup(
                 video_path=part_video_path,
                 target_duration=int(end_time - start_time),
                 target_platform=request.target_platform,
@@ -1355,44 +1395,37 @@ async def _process_series_video_task(job_id: str, request: SeriesCreateRequest):
                 new_audio_path=audio_path,
                 output_path=final_part_path,
                 bgm_style=request.bgm_style,
-                normalize_audio=True
+                normalize_audio=True,
+                remove_watermark=request.remove_watermark,
+                # Use speed factor if available
+                speed_factor=1.05
             )
             
-            generated_parts.append(str(final_part_path))
+            if render_res.get("success"):
+                generated_parts.append(str(final_part_path))
+                # Archive immediately
+                try:
+                    google_drive_service.upload_file(final_part_path)
+                except: pass
             
-            # Cleanup temp part files
+            # Cleanup
             if part_video_path.exists(): part_video_path.unlink()
             if audio_path.exists(): audio_path.unlink()
 
-        # Finalize
-        job.status = JobStatus.COMPLETED
-        job.output_path = json.dumps(generated_parts) # Store list of paths
-        job.progress = 100
+        # Update DB Final
+        job_record = db.query(VideoJob).filter(VideoJob.id == job_id).first()
+        if job_record:
+            job_record.output_path = json.dumps(generated_parts)
+            job_record.output_filename = f"series_{job_id}.json"
         
-        # Archive all parts to Google Drive
-        try:
-            update_status("📤 Đang lưu trữ trọn bộ lên Google Drive...", 95)
-            for part_path in generated_parts:
-                drive_link = google_drive_service.upload_file(part_path)
-                if drive_link:
-                    logger.info(f"Archived part {Path(part_path).name} to Drive: {drive_link}")
-        except Exception as e:
-            logger.error(f"Drive series archive failed: {e}")
-
-        job.current_step = "✅ Đã hoàn thành trọn bộ series và lưu Drive!"
-        job.completed_at = datetime.utcnow()
-        db.commit()
-        
-        # Cleanup source
-        if video_path.exists():
-            video_path.unlink()
+        tracker.complete_job(job_id)
+        tracker.update_progress(job_id, "✅ Đã hoàn thành trọn bộ series!", 100)
 
     except Exception as e:
-        logger.error(f"Series processing failed: {e}")
-        job.status = JobStatus.FAILED
-        job.error_message = str(e)
-        db.commit()
+        logger.error(f"Series fail: {e}", exc_info=True)
+        tracker.fail_job(job_id, f"Lỗi Series: {str(e)}")
     finally:
+        if video_path and video_path.exists(): video_path.unlink()
         db.close()
 
 
@@ -1439,66 +1472,41 @@ async def analyze_youtube_video(
     async def run_analysis(job_id: str):
         # Create new session for background task
         db_task = SessionLocal()
+        tracker = ProgressTracker(db_task)
         try:
-            db_job = db_task.query(VideoJob).filter(VideoJob.id == job_id).first()
-            if not db_job:
-                logger.error(f"Job {job_id} not found in background task")
-                return
-
-            def update_progress(state):
-                # Map PipelineStatus to JobStatus
-                status_map = {
-                    "pending": JobStatus.PENDING,
-                    "running": JobStatus.ANALYZING,
-                    "completed": JobStatus.COMPLETED,
-                    "failed": JobStatus.FAILED,
-                    "cancelled": JobStatus.CANCELLED
-                }
+            def update_progress_cb(state):
+                # Map PipelineStatus to detailed steps via tracker
+                tracker.update_progress(
+                    job_id, 
+                    step=state.current_stage.value if state.current_stage else "Phân tích...",
+                    percentage=state.progress,
+                    current_service="youtube_analyzer"
+                )
                 
-                db_job.status = status_map.get(state.status.value, JobStatus.PROCESSING)
-                db_job.progress = state.progress
-                db_job.current_step = state.current_stage.value if state.current_stage else "initializing"
-                
-                # Store intermediate results
+                # Store analytics results in DB if available
                 if state.results:
-                    db_job.analysis_result = {
-                        "status": state.status.value,
-                        "progress": state.progress,
-                        "current_stage": state.current_stage.value if state.current_stage else None,
-                        "results": state.results,
-                        "error": state.error
-                    }
-                
-                db_task.commit()
+                    # We use a direct DB query for the analysis_result update to keep it atomic
+                    job = db_task.query(VideoJob).filter(VideoJob.id == job_id).first()
+                    if job:
+                        job.analysis_result = {
+                            "status": state.status.value,
+                            "progress": state.progress,
+                            "results": state.results,
+                            "error": state.error
+                        }
+                        db_task.commit()
             
             # Execute Pipeline
-            result = await orchestrator.run_pipeline(config, update_progress)
+            result = await orchestrator.run_pipeline(config, update_progress_cb, job_id=job_id)
             
-            # Final Update
-            status_map = {
-                "completed": JobStatus.COMPLETED,
-                "failed": JobStatus.FAILED
-            }
-            db_job.status = status_map.get(result.status.value, JobStatus.FAILED)
-            db_job.progress = result.progress
-            db_job.analysis_result = {
-                 "status": result.status.value,
-                 "progress": result.progress,
-                 "results": result.results,
-                 "error": result.error
-            }
-            
-            if result.error:
-                db_job.error_message = result.error
-                
-            db_task.commit()
+            if result.status.value == "completed":
+                tracker.complete_job(job_id)
+            else:
+                tracker.fail_job(job_id, result.error or "Analysis failed")
 
         except Exception as e:
-            logger.error(f"Analysis failed: {e}")
-            if db_job:
-                db_job.status = JobStatus.FAILED
-                db_job.error_message = str(e)
-                db_task.commit()
+            logger.error(f"Analysis system error: {e}")
+            tracker.fail_job(job_id, f"Lỗi hệ thống phân tích: {str(e)}")
         finally:
             db_task.close()
     

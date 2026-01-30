@@ -8,7 +8,7 @@ from datetime import datetime
 # --- Configuration ---
 BASE_URL = "http://localhost:8000"
 TEST_URL_SHORT_1 = "https://www.youtube.com/watch?v=jNQXAC9IVRw" # "Me at the zoo" (19s) - Safe test
-TEST_URL_ANALYZER = "https://www.youtube.com/watch?v=Fj2Jj3d3-1U" # Standard test
+TEST_URL_ANALYZER = "https://www.youtube.com/watch?v=jNQXAC9IVRw" # Real test video
 OUTPUT_FILE = "test_execution_report.json"
 
 # --- Logging Setup ---
@@ -91,7 +91,7 @@ class ProfessionalTester:
         payload = {
             "source_url": TEST_URL_SHORT_1,
             "target_platform": "tiktok",
-            "video_type": "shorts",
+            "video_type": "short",
             "processing_flow": "fast",
             "title": "QA Automated Reup Test"
         }

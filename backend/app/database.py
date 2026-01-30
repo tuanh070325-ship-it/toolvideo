@@ -187,48 +187,39 @@ def ensure_video_jobs_columns():
     """
     with engine.connect() as conn:
         try:
-            # Check for existing columns via information_schema
-            res = conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'video_jobs' AND column_name IN ('processing_flow', 'processing_options')"
+            # Check for existing columns - Handle SQLite differently
+            if "sqlite" in conn.dialect.name:
+                res = conn.execute(text("PRAGMA table_info(video_jobs)"))
+                existing = {row[1].lower() for row in res.fetchall()}
+            else:
+                res = conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns WHERE table_name = 'video_jobs' AND LOWER(column_name) IN "
+                        "('processing_flow', 'processing_options', 'file_size_mb', 'estimated_duration_seconds', "
+                        "'processing_start_time', 'processing_end_time', 'current_api_service', 'steps_completed')"
+                    )
                 )
-            )
-            existing = {row[0] for row in res.fetchall()}
+                existing = {row[0].lower() for row in res.fetchall()}
 
-            # Add processing_flow if missing
-            if "processing_flow" not in existing:
-                try:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE video_jobs ADD COLUMN processing_flow VARCHAR(50) DEFAULT 'auto'"
-                        )
-                    )
-                except Exception:
-                    # Best-effort for DBs that may require different syntax
-                    conn.execute(
-                        text("ALTER TABLE video_jobs ADD COLUMN processing_flow VARCHAR(50)")
-                    )
+            # Columns to add with their types
+            to_add = [
+                ("processing_flow", "VARCHAR(50)"),
+                ("processing_options", "TEXT"),  # TEXT is safer for JSON fallback
+                ("file_size_mb", "FLOAT"),
+                ("estimated_duration_seconds", "INTEGER"),
+                ("processing_start_time", "DATETIME"),
+                ("processing_end_time", "DATETIME"),
+                ("current_api_service", "VARCHAR(50)"),
+                ("steps_completed", "TEXT"),
+            ]
 
-            # Add processing_options if missing
-            if "processing_options" not in existing:
-                dialect = conn.dialect.name.lower()
-                if dialect.startswith("postgres"):
-                    # Use JSONB when available
-                    conn.execute(
-                        text("ALTER TABLE video_jobs ADD COLUMN processing_options JSONB NULL")
-                    )
-                else:
-                    # MySQL/others: use JSON or TEXT
+            for col_name, col_type in to_add:
+                if col_name.lower() not in existing:
                     try:
-                        conn.execute(
-                            text("ALTER TABLE video_jobs ADD COLUMN processing_options JSON NULL")
-                        )
+                        conn.execute(text(f"ALTER TABLE video_jobs ADD COLUMN {col_name} {col_type}"))
+                        conn.commit()
                     except Exception:
-                        conn.execute(
-                            text("ALTER TABLE video_jobs ADD COLUMN processing_options TEXT NULL")
-                        )
+                        pass
         except Exception as exc:
-            # Don't crash the app if we can't alter schema - log and continue
             from app.core.logger import logger
-
             logger.warning(f"Could not ensure video_jobs columns: {exc}")

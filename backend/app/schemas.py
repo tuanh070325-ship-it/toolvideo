@@ -340,3 +340,70 @@ class ReportExportRequest(BaseModel):
     job_id: str
     format: str = "json"  # json, pdf, csv
     include_transcript: bool = True
+# ==================== STORY STUDIO SCHEMAS ====================
+
+class StudioIdeaRequest(BaseModel):
+    """Request to brainstorm viral ideas"""
+    topic: str
+    ai_provider: Optional[str] = "auto"
+
+class StudioIdea(BaseModel):
+    """Single brainstormed idea"""
+    id: str
+    title: str
+    description: str
+    style: str
+
+class StudioIdeaResponse(BaseModel):
+    """Response containing multiple ideas"""
+    success: bool
+    ideas: List[StudioIdea]
+
+class StudioCharacterConfig(BaseModel):
+    """Configuration for characters in the story"""
+    role: str = "Bà và cháu gái"
+    addressing: str = "Bà - Cháu"
+    style: str = "3D Animation"
+
+class StudioScriptRequest(BaseModel):
+    """Request to generate full script from an idea"""
+    idea_title: str
+    character_config: StudioCharacterConfig
+    ai_provider: Optional[str] = "auto"
+
+class StudioScene(BaseModel):
+    """Single scene in the script"""
+    scene_number: int
+    dialogue: str
+    background: str
+    visual_description: str
+    video_prompt: str
+    image_url: Optional[str] = None
+    audio_url: Optional[str] = None
+
+class StudioScriptResponse(BaseModel):
+    """Full script and scene breakdown"""
+    success: bool
+    title: str
+    thumbnail_prompt: str
+    scenes: List[StudioScene]
+
+class StudioImageRequest(BaseModel):
+    """Request to generate an image for a scene"""
+    visual_description: str
+    char_role: str
+
+class StudioImageResponse(BaseModel):
+    """Response with the generated image URL"""
+    success: bool
+    image_url: Optional[str] = None
+
+class StudioAudioRequest(BaseModel):
+    """Request to generate TTS for a scene"""
+    text: str
+    voice: Optional[str] = None
+
+class StudioAudioResponse(BaseModel):
+    """Response with the generated audio URL"""
+    success: bool
+    audio_url: Optional[str] = None

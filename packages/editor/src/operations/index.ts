@@ -1,0 +1,1 @@
+export { TrimOperation } from "./trim";

@@ -39,7 +39,76 @@ class FFmpegOps:
         
         self.ffmpeg_path = ffmpeg_path
         self.ffprobe_path = ffprobe_path
-        logger.info(f"FFmpegOps initialized: ffmpeg={self.ffmpeg_path}, ffprobe={self.ffprobe_path}")
+        self._gpu_codec = self._detect_gpu_acceleration()
+        logger.info(f"FFmpegOps initialized: ffmpeg={self.ffmpeg_path}, gpu_codec={self._gpu_codec}")
+
+    async def _test_encoder(self, encoder: str) -> bool:
+        """Perform a real 1-frame encoding test for a specific encoder"""
+        import asyncio
+        test_cmd = [
+            self.ffmpeg_path,
+            "-f", "lavfi", "-i", "color=c=black:s=64x64",
+            "-frames:v", "1",
+            "-c:v", encoder,
+            "-f", "null", "-"
+        ]
+        try:
+            # We use subprocess directly here as it's a quick sync check during init
+            # But the caller is sync, so we use subprocess.run
+            import subprocess
+            result = subprocess.run(
+                test_cmd, capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            return result.returncode == 0
+        except:
+            return False
+
+    def _detect_gpu_acceleration(self) -> Optional[str]:
+        """Detect available and WORKING hardware acceleration codecs"""
+        try:
+            # 1. Get list of all encoders
+            result = subprocess.run(
+                [self.ffmpeg_path, "-encoders"], 
+                capture_output=True, 
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            
+            # 2. Try encoders in order of preference
+            for encoder in ["h264_nvenc", "h264_qsv", "h264_amf"]:
+                if encoder in result.stdout:
+                    if self._test_encoder_sync(encoder):
+                        logger.info(f"Hardware acceleration verified: {encoder}")
+                        return encoder
+                    else:
+                        logger.warning(f"{encoder} found but NOT WORKING (driver/hw issue). Trying next...")
+            
+        except Exception as e:
+            logger.warning(f"GPU detection failed: {e}")
+        return None
+
+    def _test_encoder_sync(self, encoder: str) -> bool:
+        """Synchronous version of encoder test for use in __init__"""
+        test_cmd = [
+            self.ffmpeg_path,
+            "-f", "lavfi", "-i", "color=c=black:s=64x64",
+            "-frames:v", "1",
+            "-c:v", encoder,
+            "-f", "null", "-"
+        ]
+        try:
+            result = subprocess.run(
+                test_cmd, capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            return result.returncode == 0
+        except:
+            return False
+
+    def get_best_codec(self) -> str:
+        """Return the most performant codec available"""
+        return self._gpu_codec or settings.VIDEO_CODEC or "libx264"
 
     async def _run_command(self, cmd: list[str], timeout: int = 600) -> Tuple[int, str, str]:
         """Run FFmpeg command - using subprocess.run for better Windows compatibility"""
@@ -49,19 +118,29 @@ class FFmpegOps:
             logger.debug(f"Full command: {' '.join(cmd)}")
             
             # Use Popen with proper pipe handling to prevent buffer overflow
+            # Add hardware acceleration flags if using a GPU codec
+            if any("_nvenc" in arg for arg in cmd) or any("_qsv" in arg for arg in cmd):
+                # Optimization: Add global HW accel flag if possible (though encoder-specific is more reliable)
+                pass
+
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: subprocess.run(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,  # Discard stderr to prevent buffer overflow
+                    stderr=subprocess.PIPE,
                     timeout=timeout,
                     creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
                 )
             )
             stdout = result.stdout.decode('utf-8', errors='ignore') if result.stdout else ""
-            logger.info(f"FFmpeg command completed with code {result.returncode}")
-            return result.returncode, stdout, ""
+            stderr = result.stderr.decode('utf-8', errors='ignore') if result.stderr else ""
+            if result.returncode != 0:
+                 import sys
+                 print(f"--- FFmpeg Error Code {result.returncode} ---", file=sys.stderr)
+                 print(stderr, file=sys.stderr)
+                 print("-----------------------------------", file=sys.stderr)
+            return result.returncode, stdout, stderr
         except subprocess.TimeoutExpired as e:
             logger.error(f"FFmpeg command timed out after {timeout}s")
             raise FFmpegError(f"FFmpeg command timed out after {timeout}s")
@@ -267,25 +346,47 @@ class FFmpegOps:
         voice_path: Path,
         bgm_path: Path,
         output_path: Path,
-        bgm_volume: float = 0.15,
+        bgm_volume: float = 0.12, # Lower default slightly for better clarity
         voice_volume: float = 1.0,
+        ducking: bool = True,
     ) -> Path:
-        """Mix voice narration with background music"""
+        """
+        Mix voice narration with background music using Sidechain Compression (Auto-ducking).
+        This ensures the music lowers its volume automatically when the voice speaks.
+        """
         try:
-            logger.info(f"Mixing BGM {bgm_path} with voice {voice_path}")
+            logger.info(f"Mixing BGM {bgm_path} with voice {voice_path} (ducking={ducking})")
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Build filter complex to loop BGM and mix
-            # [1:a]aloop=loop=-1:size=2e9 [bgm]; loops BGM
-            # [0:a]volume=1.0[v]; voice
-            # [bgm]volume=0.15[bgmv]; bgm volume
-            # [v][bgmv]amix=inputs=2:duration=first[out]
+            # Filter complex logic:
+            # 1. Loop BGM infinitely
+            # 2. Adjust volumes
+            # 3. Apply Sidechain Compression (if enabled): 
+            #    - BGM is the target (compressed) signal
+            #    - Voice is the threshold (control) signal
+            # 4. Mix final outputs
+
+            # Normalize inputs first to ensure consistent levels for compression
+            # [1:a]aloop...[bgm_raw]
             
-            filter_complex = (
-                f"[1:a]aloop=loop=-1:size=2e9,volume={bgm_volume}[bgm];"
-                f"[0:a]volume={voice_volume}[v];"
-                f"[v][bgm]amix=inputs=2:duration=first:dropout_transition=3[out]"
-            )
+            if ducking:
+                # Professional Sidechain Ducking
+                # threshold: Level where compression kicks in (lower = more sensitive)
+                # ratio: How much to compress (higher = more reduction)
+                # attack/release: Speed of effect
+                filter_complex = (
+                    f"[1:a]aloop=loop=-1:size=2e9,volume={bgm_volume}[bgm];"
+                    f"[0:a]volume={voice_volume}[voice];"
+                    f"[bgm][voice]sidechaincompress=threshold=0.08:ratio=4:attack=50:release=400[ducked_bgm];"
+                    f"[voice][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=2[out]"
+                )
+            else:
+                # Simple Mix
+                filter_complex = (
+                    f"[1:a]aloop=loop=-1:size=2e9,volume={bgm_volume}[bgm];"
+                    f"[0:a]volume={voice_volume}[v];"
+                    f"[v][bgm]amix=inputs=2:duration=first:dropout_transition=3[out]"
+                )
 
             cmd = [
                 self.ffmpeg_path,
@@ -295,6 +396,7 @@ class FFmpegOps:
                 "-map", "[out]",
                 "-c:a", "aac",
                 "-b:a", "192k",
+                "-ac", "2",
                 "-y",
                 str(output_path),
             ]
@@ -312,13 +414,17 @@ class FFmpegOps:
             return voice_path
 
     async def normalize_audio(self, audio_path: Path, output_path: Path) -> Path:
-        """Normalize audio to professional standards (Loudnorm)"""
+        """Normalize audio to professional standards (Loudnorm - EBU R128)"""
         try:
             logger.info(f"Normalizing audio: {audio_path}")
+            # Two-pass loudnorm is better but one-pass is sufficient for TTS
+            # I: Integrated loudness target (-16LUFS for podcasts/mobile, -14LUFS for Youtube)
+            # TP: True Peak limit (-1.5dB)
+            # LRA: Loudness Range Target (7LU is good for speech)
             cmd = [
                 self.ffmpeg_path,
                 "-i", str(audio_path),
-                "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+                "-af", "loudnorm=I=-14:TP=-1.5:LRA=7", 
                 "-c:a", "aac",
                 "-b:a", "192k",
                 "-y",
@@ -444,7 +550,8 @@ class FFmpegOps:
                 "-i", str(video_path),
                 "-vf", filter_complex,
                 "-c:a", "copy", # Keep audio as is
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", "veryfast", # Speed over compression for previews
                 "-y",
                 str(output_path)
@@ -480,7 +587,8 @@ class FFmpegOps:
                 "-i", str(video_path),
                 "-ss", str(start_time),
                 "-t", str(duration),
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-c:a", "aac",
                 "-y",
@@ -555,10 +663,12 @@ class FFmpegOps:
             cmd = [
                 self.ffmpeg_path,
                 "-i", str(video_path),
-                "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
-                "-c:v", settings.VIDEO_CODEC,
+                "-vf", f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:-1:-1",
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-c:a", "aac",
+                "-pix_fmt", "yuv420p",
                 "-y",
                 str(output_path),
             ]
@@ -635,7 +745,8 @@ class FFmpegOps:
             cmd = [
                 self. ffmpeg_path,
                 "-i", str(video_path),
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-b:v", bitrate,
                 "-c:a", "aac",
@@ -748,7 +859,8 @@ class FFmpegOps:
                 self.ffmpeg_path,
                 "-i", str(video_path),
                 "-vf", filter_complex,
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-c:a", "aac",
                 "-y",
@@ -846,7 +958,8 @@ class FFmpegOps:
                 "-filter_complex", filter_complex,
                 "-map", "[outv]",
             ] + audio_mapping + [
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-c:a", "aac",
                 "-shortest",
@@ -990,7 +1103,8 @@ class FFmpegOps:
                 cmd.extend(["-filter:a", audio_filter])
 
             cmd.extend([
-                "-c:v", settings.VIDEO_CODEC,
+                "-c:v", self.get_best_codec(),
+                "-threads", "auto",
                 "-preset", settings.VIDEO_PRESET,
                 "-y",
                 str(output_path),

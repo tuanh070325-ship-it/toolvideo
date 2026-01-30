@@ -380,12 +380,36 @@ Tôi đã ghi nhận yêu cầu của bạn. Để tạo được câu chuyện 
                 story_text = self._add_natural_pauses(story_text)
             
             output_path = Path(settings.PROCESSED_DIR) / f"eoa_audio_{session_id}.mp3"
-            audio_path, _ = await tts.synthesize(
+            raw_audio_path, _ = await tts.synthesize(
                 text=story_text,
                 voice=voice,
                 speed=speed,
-                output_path=output_path
+                output_path=Path(settings.TEMP_DIR) / f"raw_eoa_{session_id}.mp3"
             )
+            
+            # Check if BGM requested
+            bgm_path = None
+            if collected_info.get("add_background_music"):
+                # Simple logic: pick a BGM based on style
+                style = collected_info.get("style", "dramatic")
+                bgm_file = "dramatic.mp3" if style == "dramatic" else "cheerful.mp3"
+                potential_bgm = Path("data/bgm") / bgm_file
+                if potential_bgm.exists():
+                    bgm_path = potential_bgm
+            
+            # Process final mix (Normalize + BGM)
+            from app.services.audio_processor import audio_processor
+            audio_path = await audio_processor.process_final_mix(
+                voice_path=raw_audio_path,
+                bgm_path=bgm_path, 
+                ducking=True
+            )
+            
+            # Move/Rename to final output location if needed, or just return the processed path
+            # process_final_mix returns a temp path, so let's ensure it's where we expect
+            import shutil
+            shutil.copy(str(audio_path), str(output_path))
+            audio_path = output_path
             
             # Calculate duration (approximate: ~150 words per minute)
             word_count = len(story_text.split())

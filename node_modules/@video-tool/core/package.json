@@ -1,0 +1,27 @@
+{
+  "name": "@video-tool/core",
+  "version": "1.0.0",
+  "description": "Core library for video processing tool",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest"
+  },
+  "dependencies": {
+    "zod": "^3.22.4",
+    "ioredis": "^5.3.2",
+    "pino": "^8.15.0",
+    "pino-pretty": "^10.0.0",
+    "@aws-sdk/client-s3": "^3.454.0",
+    "@aws-sdk/lib-storage": "^3.454.0",
+    "nanoid": "^5.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "typescript": "^5.2.2",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.5"
+  }
+}

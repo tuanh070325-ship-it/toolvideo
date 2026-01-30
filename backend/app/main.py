@@ -12,19 +12,26 @@ from fastapi.staticfiles import StaticFiles
 from app.core.logger import logger
 from sqlalchemy import text
 
+from app.utils.structured_logger import set_request_id
 from app.api import api_router
 from app.core.config import settings
-from app.core.logger import setup_logging
+# from app.core.logger import setup_logging  <-- Removed old logger setup
 from app.database import Base, SessionLocal, engine
 from app.utils.file_utils import ensure_dirs
+import uuid
 
+# ... (Previous imports)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    # Use structured logger
+    # Logger is already setup in app.core.logger
+    
+    logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Environment: {settings.APP_ENV}")
-    logger.info(f"Debug mode: {settings.DEBUG}")
-
+    
+    # ... (Rest of lifespan function remains similar)
+    
     # Create DB tables (sync engine) - run in thread to avoid blocking
     try:
         await anyio.to_thread.run_sync(lambda: Base.metadata.create_all(bind=engine))
@@ -34,22 +41,23 @@ async def lifespan(app: FastAPI):
 
         await anyio.to_thread.run_sync(ensure_video_jobs_columns)
 
-        logger.info("✅ Database tables created and schema checked")
+        logger.info("OK: Database tables created and schema checked")
     except Exception as e:
-        logger.error(f"❌ Database error: {e}")
+        logger.error(f"ERR: Database error: {e}")
 
     # Ensure directories exist
     try:
         ensure_dirs()
-        logger.info("✅ Directories created")
+        logger.info("OK: Directories created")
     except Exception as e:
-        logger.error(f"❌ Directory error: {e}")
+        logger.error(f"ERR: Directory error: {e}")
 
     yield
     logger.info("👋 Shutting down...")
 
 
-setup_logging()
+# Initialize structured logging
+# Logger is already setup in app.core.logger
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -61,40 +69,36 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if settings.DEBUG else settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Set up CORS
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.warning(f"Validation error: {exc}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": exc.body},
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    logger.opt(exception=True).error("Unhandled error")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Internal server error"},
-    )
-
-
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
+async def request_id_middleware(request: Request, call_next):
+    """Add unique Request ID to every request"""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    set_request_id(request_id)
+    
     start_time = time.time()
     response = await call_next(request)
-    response.headers["X-Process-Time"] = str(time.time() - start_time)
+    process_time = time.time() - start_time
+    
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = str(process_time)
+    
+    # Log slow requests (>1s) as warnings
+    if process_time > 1.0:
+        logger.warning(f"Slow request: {request.method} {request.url.path} took {process_time:.2f}s")
+        
     return response
 
 

@@ -1,0 +1,61 @@
+version: "3.8"
+
+services:
+  video-tool-api:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/data
+      - QUEUE_TYPE=memory
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - CONCURRENCY_DOWNLOADS=3
+      - CONCURRENCY_EDITS=2
+      - CONCURRENCY_UPLOADS=2
+    volumes:
+      - video_data:/app/data
+      - video_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - video-tool-api
+    restart: unless-stopped
+
+volumes:
+  video_data:
+    driver: local
+  video_logs:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: video-tool-network

@@ -25,6 +25,8 @@ class VideoEditor:
         output_path: Optional[Path] = None,
         bgm_style: str = "cheerful",
         normalize_audio: bool = True,
+        remove_watermark: bool = False,
+        speed_factor: float = 1.0,
     ) -> dict[str, Any]:
         """
         Process video for reupload with AI narration and text
@@ -57,30 +59,54 @@ class VideoEditor:
             resized_video = await self._resize_for_platform(video_path, target_platform)
             logger.info(f"Resized video: {resized_video}")
 
+            # Step 2a: Adjust Speed (Fair Use / Copyright Evasion)
+            if abs(speed_factor - 1.0) > 0.01:
+                logger.info(f"Step 2a: Adjusting speed by {speed_factor}x...")
+                speed_path = Path(settings.TEMP_DIR) / f"speed_{speed_factor}_{video_path.stem}.mp4"
+                resized_video = await ffmpeg_ops.adjust_speed(
+                    resized_video, 
+                    speed_path, 
+                    speed=speed_factor
+                )
+                logger.info(f"Speed adjusted: {resized_video}")
+
+            # Step 2b: Remove Watermark (Smart Crop)
+            if remove_watermark:
+                logger.info("Step 2b: Applying smart crop to remove potential watermarks...")
+                # We crop slightly (zoom 1.05x) to remove edge watermarks
+                crop_path = Path(settings.TEMP_DIR) / f"nocrop_{video_path.stem}.mp4"
+                # Use convert_aspect_ratio with "crop" method on same aspect ratio to effect a zoom-fill
+                # We assume resized_video is already at target aspect ratio from Step 2
+                resized_video = await ffmpeg_ops.convert_aspect_ratio(
+                    resized_video,
+                    target_ratio="9:16" if target_platform in ["tiktok", "douyin", "reels"] else "16:9", 
+                    output_path=crop_path,
+                    method="crop" # This ensures it fills screen, potentially cutting edges
+                )
+                logger.info(f"Smart crop applied: {resized_video}")
+
             # Replace audio if provided
             if new_audio_path:
                 logger.info("Step 3: Processing audio with AI narration...")
                 
-                # Step 3a: Normalize Narration
-                normalized_narration = Path(settings.TEMP_DIR) / f"norm_{new_audio_path.name}"
-                new_audio_path = await ffmpeg_ops.normalize_audio(new_audio_path, normalized_narration)
+                bgm_path = None
+                if bgm_style and bgm_style != "none":
+                    potential_bgm = Path("data/bgm") / f"{bgm_style}.mp3"
+                    if potential_bgm.exists():
+                        bgm_path = potential_bgm
                 
-                # Step 3b: Add Background Music if requested
-                bgm_path = Path("data/bgm") / f"{bgm_style}.mp3"
-                
-                if bgm_path.exists():
-                    logger.info(f"Adding background music: {bgm_style}")
-                    mixed_audio = Path(settings.TEMP_DIR) / f"mixed_{new_audio_path.name}"
-                    new_audio_path = await ffmpeg_ops.add_background_music(
-                        new_audio_path, 
-                        bgm_path, 
-                        mixed_audio,
-                        bgm_volume=0.15
-                    )
+                # Use advanced audio processor for mixing with ducking
+                # This handles normalization and sidechain compression automatically
+                processed_audio_path = await audio_processor.process_final_mix(
+                    voice_path=new_audio_path,
+                    bgm_path=bgm_path,
+                    bgm_volume=0.12, # Slightly lower for clarity
+                    ducking=True
+                )
 
                 video_with_audio = await ffmpeg_ops.replace_audio(
                     resized_video,
-                    new_audio_path,
+                    processed_audio_path,
                     Path(settings.TEMP_DIR) / f"with_audio_{video_path.stem}.mp4",
                 )
                 logger.info(f"Audio replaced: {video_with_audio}")

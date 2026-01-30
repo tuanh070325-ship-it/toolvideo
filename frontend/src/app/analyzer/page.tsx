@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Search, TrendingUp, Shield, Sparkles, Download, FileText, Loader2, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
-import { api } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 
 interface AnalysisResult {
     job_id: string;
@@ -55,8 +55,7 @@ export default function AnalyzerPage() {
 
         const interval = setInterval(async () => {
             try {
-                const response = await fetch(`http://localhost:8000/api/youtube/analysis/${jobId}`);
-                const data = await response.json();
+                const data = await apiClient.getAnalysisResult(jobId);
                 setResult(data);
 
                 if (data.status === 'completed' || data.status === 'failed') {
@@ -78,13 +77,9 @@ export default function AnalyzerPage() {
         setResult(null);
 
         try {
-            const response = await fetch('http://localhost:8000/api/youtube/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ youtube_url: url }),
-            });
+            const data = await apiClient.analyzeYoutube(url);
 
-            const data = await response.json();
+
 
             if (data.success) {
                 setJobId(data.job_id);
@@ -299,7 +294,7 @@ export default function AnalyzerPage() {
                                         <div>
                                             <span className="text-sm text-gray-400">Sentiment:</span>
                                             <span className={`ml-2 capitalize ${result.nlp_analysis.sentiment === 'positive' ? 'text-green-400' :
-                                                    result.nlp_analysis.sentiment === 'negative' ? 'text-red-400' : 'text-gray-400'
+                                                result.nlp_analysis.sentiment === 'negative' ? 'text-red-400' : 'text-gray-400'
                                                 }`}>
                                                 {result.nlp_analysis.sentiment}
                                             </span>

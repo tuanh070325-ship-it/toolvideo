@@ -97,6 +97,14 @@ class VideoJob(Base):
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
 
+    # Progress Tracking & Logging Fields
+    file_size_mb = Column(Float, nullable=True)  # Input file size in MB
+    estimated_duration_seconds = Column(Integer, nullable=True)  # Estimated processing time
+    processing_start_time = Column(DateTime(timezone=True), nullable=True)
+    processing_end_time = Column(DateTime(timezone=True), nullable=True)
+    current_api_service = Column(String(50), nullable=True)  # e.g., "youtube_api", "ffmpeg", "openai"
+    steps_completed = Column(JSON, nullable=True, default=[])  # List of completed steps with timing
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)

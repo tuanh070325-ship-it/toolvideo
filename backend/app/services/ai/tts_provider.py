@@ -11,9 +11,11 @@ import uuid
 import httpx
 from app.core.logger import logger
 from app.core.config import settings
+from app.core.quotas import quota_manager
 
 
 class TTSProvider(ABC):
+
     """Abstract base class for TTS providers"""
 
     provider_id: str = "base"
@@ -202,6 +204,11 @@ class ViettelAITTSProvider(TTSProvider):
             output_path = output_path or Path(settings.TEMP_DIR) / f"tts_viettel_{uuid.uuid4().hex[:8]}.wav"
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not quota_manager.check_quota("tts_chars", len(text)):
+                raise Exception("TTS Character quota exceeded")
+
             logger.info(f"Synthesizing with ViettelAI TTS: {voice}")
             
             # ViettelAI TTS API
@@ -272,6 +279,11 @@ class FPTAITTSProvider(TTSProvider):
             voice = voice or settings.FPT_TTS_VOICE
             output_path = output_path or Path(settings.TEMP_DIR) / f"tts_fpt_{uuid.uuid4().hex[:8]}.mp3"
             output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not quota_manager.check_quota("tts_chars", len(text)):
+                raise Exception("TTS Character quota exceeded")
 
             logger.info(f"Synthesizing with FPT.AI TTS: {voice}")
             
@@ -345,6 +357,11 @@ class ElevenLabsTTSProvider(TTSProvider):
             voice_id = voice or settings.ELEVENLABS_VOICE_ID
             output_path = output_path or Path(settings.TEMP_DIR) / f"tts_eleven_{uuid.uuid4().hex[:8]}.mp3"
             output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not quota_manager.check_quota("tts_chars", len(text)):
+                raise Exception("TTS Character quota exceeded")
 
             logger.info(f"Synthesizing with ElevenLabs TTS: {voice_id}")
             
@@ -450,6 +467,11 @@ class OpenAITTSProvider(TTSProvider):
 
             output_path = output_path or Path(settings.TEMP_DIR) / f"tts_openai_{uuid.uuid4().hex[:8]}.mp3"
             output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not quota_manager.check_quota("tts_chars", len(text)):
+                raise Exception("TTS Character quota exceeded")
 
             logger.info(f"Synthesizing with OpenAI TTS: {voice}")
             

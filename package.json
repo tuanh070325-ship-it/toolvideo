@@ -1,0 +1,38 @@
+{
+  "name": "video-tool",
+  "version": "1.0.0",
+  "description": "Complete video processing tool with download, edit, and upload capabilities",
+  "private": true,
+  "packageManager": "npm@9.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "docker:build": "docker build -f infrastructure/docker/Dockerfile -t video-tool .",
+    "docker:run": "docker-compose -f infrastructure/docker/docker-compose.yml up -d",
+    "docker:stop": "docker-compose -f infrastructure/docker/docker-compose.yml down",
+    "start:api": "node packages/api/dist/server.js",
+    "setup": "npm install && turbo run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "typescript": "^5.2.2",
+    "turbo": "^1.10.16",
+    "eslint": "^8.50.0",
+    "prettier": "^3.0.3",
+    "zod": "^3.22.4",
+    "pino": "^8.15.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

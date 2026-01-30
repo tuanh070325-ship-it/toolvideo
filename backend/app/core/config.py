@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     PROCESSED_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "processed")
     UPLOAD_DIR: Path = Field(default_factory=lambda: _backend_dir() / "uploads")
     LOG_DIR: Path = Field(default_factory=lambda: _backend_dir() / "logs")
+    LOG_FILE: str = Field(default="logs/app.log", env="LOG_FILE")
     VOICE_SAMPLES_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "voice_samples")
     FONTS_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "fonts")
 
@@ -168,6 +169,14 @@ class Settings(BaseSettings):
     # ==================== GOOGLE DRIVE ====================
     GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = Field(default="credentials.json", env="GOOGLE_APPLICATION_CREDENTIALS")
     GOOGLE_DRIVE_FOLDER_ID: Optional[str] = Field(default=None, env="GOOGLE_DRIVE_FOLDER_ID")
+
+    # ==================== QUOTAS & LIMITS (Cost Control) ====================
+    # -1 means unlimited
+    QUOTA_OPENAI_TOKENS_DAILY: int = Field(default=100000, env="QUOTA_OPENAI_TOKENS_DAILY") # Approx $0.20 - $1.00 depending on model
+    QUOTA_GEMINI_REQUESTS_DAILY: int = Field(default=1000, env="QUOTA_GEMINI_REQUESTS_DAILY") # Free tier has limits
+    QUOTA_TTS_CHARS_DAILY: int = Field(default=500000, env="QUOTA_TTS_CHARS_DAILY") # For paid TTS providers
+    QUOTA_VIDEO_JOBS_DAILY: int = Field(default=50, env="QUOTA_VIDEO_JOBS_DAILY")
+
 
 
 settings = Settings()

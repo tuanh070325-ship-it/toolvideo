@@ -9,6 +9,7 @@ import json
 from app.core.logger import logger
 from app.core.config import settings
 from app.ai_prompts import VideoPrompts
+from app.core.quotas import quota_manager
 
 class StoryGenerator(ABC):
     """Abstract base class for story generation"""
@@ -67,6 +68,9 @@ class OpenAIStoryGenerator(StoryGenerator):
         """Generate story using OpenAI GPT"""
         try:
             logger.info(f"Generating {style} story in {language}")
+
+            if not quota_manager.check_quota("openai", max_length):
+                raise Exception("OpenAI quota exceeded")
             
             system_prompt = f"""You are a creative storyteller. Generate a {style} story in {language}. 
             The story should be engaging, vivid, and suitable for video content.
@@ -222,6 +226,9 @@ class GeminiStoryGenerator(StoryGenerator):
         """Generate story using Gemini"""
         try: 
             logger.info(f"Generating {style} story with Gemini in {language}")
+
+            if not quota_manager.check_quota("gemini", 1):
+                raise Exception("Gemini quota exceeded")
             
             full_prompt = f"""Generate a {style} story in {language} language.
             Maximum length: {max_length} words.

@@ -1,0 +1,14 @@
+
+> @video-tool/core@1.0.0 build
+> tsc
+
+src/config/validation.ts(44,15): error TS2339: Property 'partial' does not exist on type 'typeof import("D:/video_tool/node_modules/zod/v3/external")'.
+src/index.ts(20,10): error TS2305: Module '"./config/validation"' has no exported member 'ConfigSchema'.
+src/interfaces.ts(15,3): error TS2724: '"./types"' has no exported member named 'EditOperation'. Did you mean 'EditOptions'?
+npm error Lifecycle script `build` failed with error:
+npm error code 2
+npm error path D:\video_tool\packages\core
+npm error workspace @video-tool/core@1.0.0
+npm error location D:\video_tool\packages\core
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c tsc

@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import { apiClient } from '@/lib/api-client';
 import { ReupVideoFeature } from '@/components/features/ReupVideoFeature';
+import { StudioFeature } from '@/components/features/StudioFeature';
 import { StoryVideoFeature } from '@/components/features/StoryVideoFeature';
 import { SeriesFeature } from '@/components/features/SeriesFeature';
 import { HighlightFeature } from '@/components/features/HighlightFeature';
@@ -29,7 +30,7 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { EOAChatbot } from '@/components/EOAChatbot';
 import clsx from 'clsx';
 
-type TabKey = 'reup' | 'story' | 'series' | 'highlight' | 'merge' | 'aspect' | 'tts';
+type TabKey = 'reup' | 'studio' | 'story' | 'series' | 'highlight' | 'merge' | 'aspect' | 'tts';
 
 interface HealthStatus {
   api?: boolean;
@@ -84,6 +85,7 @@ export default function HomePage() {
 
   const tabs = [
     { key: 'reup' as TabKey, label: '🎬 Reup', icon: Upload, description: 'Tải và xử lý video từ URL với AI' },
+    { key: 'studio' as TabKey, label: '✨ Studio', icon: Sparkles, description: 'Sáng tạo kịch bản & hình ảnh viral từ một chủ đề' },
     { key: 'story' as TabKey, label: '📖 Story', icon: BookOpen, description: 'Tạo video câu chuyện AI với âm thanh' },
     { key: 'series' as TabKey, label: '📚 Series', icon: Layers, description: 'Tạo series kể chuyện dài kỳ (3-10 tập)' },
     { key: 'highlight' as TabKey, label: '✂️ Highlight', icon: Scissors, description: 'Trích xuất đoạn hay nhất từ video dài' },
@@ -172,6 +174,7 @@ export default function HomePage() {
             {/* Feature Content */}
             <div className="space-y-6">
               {selectedTab === 'reup' && <ReupVideoFeature />}
+              {selectedTab === 'studio' && <StudioFeature />}
               {selectedTab === 'story' && <StoryVideoFeature />}
               {selectedTab === 'series' && <SeriesFeature />}
               {selectedTab === 'highlight' && <HighlightFeature />}

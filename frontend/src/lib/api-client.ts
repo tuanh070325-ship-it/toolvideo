@@ -153,6 +153,20 @@ class APIClient {
     return response.data;
   }
 
+  // ==================== YOUTUBE ANALYSIS ====================
+
+  async analyzeYoutube(youtubeUrl: string) {
+    const { data } = await this.client.post('/youtube/analyze', {
+      youtube_url: youtubeUrl,
+    });
+    return data;
+  }
+
+  async getAnalysisResult(jobId: string) {
+    const { data } = await this.client.get(`/youtube/analysis/${jobId}`);
+    return data;
+  }
+
   // ==================== EOA CHATBOT ====================
 
   async eoaChat(
@@ -302,6 +316,48 @@ class APIClient {
 
   async downloadHighlightsVideo(jobId: string) {
     const response = await this.client.get(`/videos/highlights/${jobId}`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  }
+
+  // ==================== STORY STUDIO ====================
+
+  async getStudioIdeas(topic: string, aiProvider?: string) {
+    const { data } = await this.client.post('/studio/ideas', {
+      topic,
+      ai_provider: aiProvider,
+    });
+    return data;
+  }
+
+  async generateStudioScript(ideaTitle: string, characterConfig: any, aiProvider?: string) {
+    const { data } = await this.client.post('/studio/generate-script', {
+      idea_title: ideaTitle,
+      character_config: characterConfig,
+      ai_provider: aiProvider,
+    });
+    return data;
+  }
+
+  async generateStudioImage(visualDescription: string, charRole: string) {
+    const { data } = await this.client.post('/studio/generate-image', {
+      visual_description: visualDescription,
+      char_role: charRole,
+    });
+    return data;
+  }
+
+  async generateStudioAudio(text: string, voice?: string) {
+    const { data } = await this.client.post('/studio/generate-audio', {
+      text,
+      voice,
+    });
+    return data;
+  }
+
+  async exportStudioZip(projectData: any) {
+    const response = await this.client.post('/studio/export-zip', projectData, {
       responseType: 'blob',
     });
     return response.data;

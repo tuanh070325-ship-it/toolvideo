@@ -124,7 +124,8 @@ class MasterOrchestrator:
     async def run_pipeline(
         self,
         config: PipelineConfig,
-        progress_callback: Callable = None
+        progress_callback: Callable = None,
+        job_id: str = None
     ) -> PipelineState:
         """
         Run complete analysis pipeline.
@@ -132,8 +133,9 @@ class MasterOrchestrator:
         Args:
             config: Pipeline configuration
             progress_callback: Optional callback for progress updates
+            job_id: Optional external job ID
         """
-        job_id = str(uuid.uuid4())
+        job_id = job_id or str(uuid.uuid4())
         
         state = PipelineState(
             job_id=job_id,
@@ -269,19 +271,39 @@ class MasterOrchestrator:
             state.status = PipelineStatus.COMPLETED
             state.progress = 100
             state.end_time = datetime.utcnow()
-            
             await self._notify_progress(state)
             
+            # Update DB status
+            from app.services.progress_tracker import ProgressTracker
+            from app.database import SessionLocal
+            db_final = SessionLocal()
+            try:
+                tracker = ProgressTracker(db_final)
+                tracker.complete_job(job_id)
+            finally:
+                db_final.close()
+                
         except Exception as e:
-            logger.error(f"Pipeline failed: {e}")
+            logger.error(f"Pipeline failed: {e}", exc_info=True)
             state.status = PipelineStatus.FAILED
             state.error = str(e)
             state.end_time = datetime.utcnow()
+            await self._notify_progress(state)
+            
+            # Update DB status
+            from app.services.progress_tracker import ProgressTracker
+            from app.database import SessionLocal
+            db_error = SessionLocal()
+            try:
+                tracker = ProgressTracker(db_error)
+                tracker.fail_job(job_id, str(e))
+            finally:
+                db_error.close()
         
         finally:
             # Cleanup callbacks
             self._progress_callbacks.pop(job_id, None)
-        
+            
         return state
     
     async def _run_stage(
