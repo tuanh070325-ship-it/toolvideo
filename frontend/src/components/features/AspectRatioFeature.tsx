@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Maximize2, Loader, Download, Monitor, Smartphone, Square, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { VideoPlayer } from '@/components/VideoPlayer';
 
 interface AspectRatioInfo {
     id: string;
@@ -239,6 +240,12 @@ export function AspectRatioFeature() {
                         <Maximize2 className="w-5 h-5" />
                         <span className="font-medium">Đã chuyển đổi thành công!</span>
                     </div>
+
+                    {result.output_url && (
+                        <div className="overflow-hidden border border-white/10 rounded-xl bg-black/40">
+                            <VideoPlayer src={result.output_url} title="Xem trước tỉ lệ mới" showDownload={false} />
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-4 text-sm">
                         <div className="p-3 rounded-lg bg-white/5">

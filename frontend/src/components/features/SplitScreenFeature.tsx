@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Layers, Loader, Download, ArrowLeftRight, ArrowUpDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { VideoPlayer } from '@/components/VideoPlayer';
 
 export function SplitScreenFeature() {
     const [video1Url, setVideo1Url] = useState('');
@@ -256,6 +257,12 @@ export function SplitScreenFeature() {
                         <Layers className="w-5 h-5" />
                         <span className="font-medium">Đã ghép video thành công!</span>
                     </div>
+
+                    {result.output_url && (
+                        <div className="overflow-hidden border border-white/10 rounded-xl bg-black/40">
+                            <VideoPlayer src={result.output_url} title="Xem trước ghép video" showDownload={false} />
+                        </div>
+                    )}
 
                     <a
                         href={result.output_url}

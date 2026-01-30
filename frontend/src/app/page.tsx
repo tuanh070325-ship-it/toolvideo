@@ -84,15 +84,53 @@ export default function HomePage() {
   }, [currentJob]);
 
   const tabs = [
-    { key: 'reup' as TabKey, label: '🎬 Reup', icon: Upload, description: 'Tải và xử lý video từ URL với AI' },
-    { key: 'studio' as TabKey, label: '✨ Studio', icon: Sparkles, description: 'Sáng tạo kịch bản & hình ảnh viral từ một chủ đề' },
-    { key: 'story' as TabKey, label: '📖 Story', icon: BookOpen, description: 'Tạo video câu chuyện AI với âm thanh' },
-    { key: 'series' as TabKey, label: '📚 Series', icon: Layers, description: 'Tạo series kể chuyện dài kỳ (3-10 tập)' },
-    { key: 'highlight' as TabKey, label: '✂️ Highlight', icon: Scissors, description: 'Trích xuất đoạn hay nhất từ video dài' },
-    { key: 'merge' as TabKey, label: '🎞️ Split Screen', icon: Layers, description: 'Ghép 2 video split-screen' },
-    { key: 'aspect' as TabKey, label: '📐 Tỉ lệ', icon: Maximize2, description: 'Chuyển đổi tỉ lệ khung hình' },
-    { key: 'tts' as TabKey, label: '🎵 TTS', icon: Settings, description: 'Cài đặt giọng nói AI (Edge, ViettelAI, FPT, ElevenLabs...)' },
+    { key: 'reup' as TabKey, label: 'Reup', icon: Upload, description: 'Tải và xử lý video từ URL với AI' },
+    { key: 'studio' as TabKey, label: 'Studio', icon: Sparkles, description: 'Sáng tạo kịch bản & hình ảnh viral từ một chủ đề' },
+    { key: 'story' as TabKey, label: 'Story', icon: BookOpen, description: 'Tạo video câu chuyện AI với âm thanh' },
+    { key: 'series' as TabKey, label: 'Series', icon: Layers, description: 'Tạo series kể chuyện dài kỳ (3-10 tập)' },
+    { key: 'highlight' as TabKey, label: 'Highlight', icon: Scissors, description: 'Trích xuất đoạn hay nhất từ video dài' },
+    { key: 'merge' as TabKey, label: 'Split Screen', icon: Layers, description: 'Ghép 2 video split-screen' },
+    { key: 'aspect' as TabKey, label: 'Tỉ lệ', icon: Maximize2, description: 'Chuyển đổi tỉ lệ khung hình' },
+    { key: 'tts' as TabKey, label: 'TTS', icon: Settings, description: 'Cài đặt giọng nói AI (Edge, ViettelAI, FPT, ElevenLabs...)' },
   ];
+
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    tabKey: TabKey,
+  ) => {
+    const currentIndex = tabs.findIndex((tab) => tab.key === tabKey);
+    const lastIndex = tabs.length - 1;
+    const nextIndex = () => (currentIndex + 1 > lastIndex ? 0 : currentIndex + 1);
+    const prevIndex = () => (currentIndex - 1 < 0 ? lastIndex : currentIndex - 1);
+
+    let targetIndex: number | null = null;
+
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        targetIndex = nextIndex();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        targetIndex = prevIndex();
+        break;
+      case 'Home':
+        targetIndex = 0;
+        break;
+      case 'End':
+        targetIndex = lastIndex;
+        break;
+      default:
+        break;
+    }
+
+    if (targetIndex !== null) {
+      event.preventDefault();
+      const nextTab = tabs[targetIndex];
+      setSelectedTab(nextTab.key);
+      document.getElementById(`tab-${nextTab.key}`)?.focus();
+    }
+  };
 
   if (isLoading) {
     return (
@@ -106,33 +144,36 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900">
+    <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-gray-900/80 border-b border-white/10">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-gray-950/90 backdrop-blur-xl">
+        <div className="max-w-[1400px] mx-auto px-6 py-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <Video className="w-10 h-10 text-purple-400" />
-                <Sparkles className="absolute w-4 h-4 text-yellow-400 -top-1 -right-1" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500/30 via-purple-500/10 to-transparent border border-purple-500/30">
+                <Video className="w-6 h-6 text-purple-300" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white">Video Factory AI</h1>
-                <p className="text-sm text-gray-400">Công cụ xử lý video thông minh</p>
+                <h1 className="text-2xl font-semibold">Video Factory AI</h1>
+                <p className="text-sm text-gray-400">Trung tâm xử lý video & AI assistant</p>
               </div>
             </div>
 
             {/* Health Status */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-gray-300 md:flex">
+                <AlertCircle className="h-4 w-4" />
+                API: {healthStatus && !hasError ? 'Online' : 'Offline'}
+              </div>
               {healthStatus && !hasError ? (
-                <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30">
-                  <CheckCircle className="w-5 h-5 text-green-400" />
-                  <span className="text-sm text-green-300">Hệ thống hoạt động</span>
+                <div className="flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300">
+                  <CheckCircle className="w-4 h-4" />
+                  Online
                 </div>
               ) : (
-                <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30">
-                  <XCircle className="w-5 h-5 text-red-400" />
-                  <span className="text-sm text-red-300">Lỗi kết nối</span>
+                <div className="flex items-center gap-2 rounded-full bg-red-500/10 px-4 py-2 text-sm text-red-300">
+                  <XCircle className="w-4 h-4" />
+                  Offline
                 </div>
               )}
             </div>
@@ -141,38 +182,66 @@ export default function HomePage() {
       </header>
 
       {/* Main Content - Split Screen */}
-      <main className="flex min-h-[calc(100vh-80px)]">
+      <main className="mx-auto grid min-h-[calc(100vh-88px)] max-w-[1400px] grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-[1.2fr_0.8fr]">
         {/* Left Panel - Settings/Features */}
-        <div className="w-1/2 border-r border-white/10 overflow-y-auto">
-          <div className="p-6">
-            {/* Tabs */}
-            <div className="flex flex-wrap gap-2 mb-6">
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/20">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="tablist" aria-label="Tính năng video">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
+                  role="tab"
+                  id={`tab-${tab.key}`}
+                  aria-selected={selectedTab === tab.key}
+                  aria-controls={`tab-panel-${tab.key}`}
+                  tabIndex={selectedTab === tab.key ? 0 : -1}
                   onClick={() => setSelectedTab(tab.key)}
+                  onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
                   className={clsx(
-                    'flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition-all',
+                    'group flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all',
                     selectedTab === tab.key
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/30'
-                      : 'bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10'
+                      ? 'border-purple-500/50 bg-purple-500/20 text-white shadow-lg shadow-purple-500/10'
+                      : 'border-white/10 bg-white/5 text-gray-300 hover:border-purple-500/30 hover:bg-white/10'
                   )}
                 >
-                  <tab.icon className="w-5 h-5" />
-                  {tab.label}
+                  <div
+                    className={clsx(
+                      'flex h-9 w-9 items-center justify-center rounded-xl border',
+                      selectedTab === tab.key
+                        ? 'border-purple-400/60 bg-purple-500/30 text-purple-200'
+                        : 'border-white/10 bg-white/5 text-gray-400 group-hover:text-purple-200'
+                    )}
+                  >
+                    <tab.icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">{tab.label}</div>
+                    <div className="text-xs text-gray-400">{tab.description}</div>
+                  </div>
                 </button>
               ))}
             </div>
+          </div>
 
-            {/* Tab Description */}
-            <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20">
-              <p className="text-gray-300">
-                {tabs.find(t => t.key === selectedTab)?.description}
-              </p>
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Tùy chỉnh nhanh</h2>
+                <p className="text-sm text-gray-400">
+                  {tabs.find((t) => t.key === selectedTab)?.description}
+                </p>
+              </div>
+              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-gray-400">
+                {selectedTab.toUpperCase()}
+              </div>
             </div>
 
-            {/* Feature Content */}
-            <div className="space-y-6">
+            <div
+              role="tabpanel"
+              id={`tab-panel-${selectedTab}`}
+              aria-labelledby={`tab-${selectedTab}`}
+              className="space-y-6"
+            >
               {selectedTab === 'reup' && <ReupVideoFeature />}
               {selectedTab === 'studio' && <StudioFeature />}
               {selectedTab === 'story' && <StoryVideoFeature />}
@@ -186,15 +255,17 @@ export default function HomePage() {
         </div>
 
         {/* Right Panel - Video Preview */}
-        <div className="w-1/2 flex flex-col bg-black/20">
-          <div className="p-6 flex-1 flex flex-col">
-            <h2 className="flex items-center gap-2 mb-4 text-lg font-semibold text-white">
-              <Play className="w-5 h-5 text-purple-400" />
-              Video Preview
-            </h2>
+        <div className="flex flex-col gap-6">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <Play className="w-5 h-5 text-purple-300" />
+                Xem trước
+              </h2>
+              <span className="text-xs text-gray-400">Video output</span>
+            </div>
 
-            {/* Video Player Area */}
-            <div className="flex-1 rounded-xl overflow-hidden border border-white/10" style={{ minHeight: '400px' }}>
+            <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/40" style={{ minHeight: '360px' }}>
               <VideoPlayer
                 src={videoUrl || undefined}
                 title={currentJob?.id ? `Job: ${currentJob.id}` : 'Video Preview'}
@@ -202,58 +273,66 @@ export default function HomePage() {
               />
             </div>
 
-            {/* Job Status */}
-            {currentJob && currentJob.status !== 'completed' && (
-              <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-300">Trạng thái xử lý</span>
-                  <span className={clsx(
-                    'px-3 py-1 rounded-full text-xs font-medium',
-                    {
-                      'bg-yellow-500/20 text-yellow-300': currentJob.status === 'pending',
-                      'bg-blue-500/20 text-blue-300': currentJob.status === 'processing' || currentJob.status === 'downloading',
-                      'bg-green-500/20 text-green-300': currentJob.status === 'completed',
-                      'bg-red-500/20 text-red-300': currentJob.status === 'failed',
-                    }
-                  )}>
-                    {currentJob.status}
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="h-2 bg-gray-700 rounded-full overflow-hidden mb-2">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
-                    style={{ width: `${currentJob.progress}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">{currentJob.current_step}</span>
-                  <span className="text-purple-400">{currentJob.progress}%</span>
-                </div>
-
-                {currentJob.error_message && (
-                  <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-                    <p className="text-sm text-red-300">{currentJob.error_message}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Quick Tips */}
-            {!currentJob && !videoUrl && (
-              <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border border-blue-500/20">
-                <h3 className="text-sm font-medium text-blue-300 mb-2">💡 Mẹo sử dụng</h3>
-                <ul className="text-xs text-gray-400 space-y-1">
-                  <li>• Nhập URL video từ YouTube, TikTok, Instagram...</li>
-                  <li>• Chọn các tùy chọn xử lý bên trái</li>
-                  <li>• Video đã xử lý sẽ hiển thị tại đây</li>
-                  <li>• Sử dụng EOA Chat (góc phải dưới) để tạo nội dung AI</li>
-                </ul>
+            {!videoUrl && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-gray-400">
+                Video đã xử lý sẽ hiển thị tại đây trước khi tải xuống.
               </div>
             )}
           </div>
+
+          {/* Job Status */}
+          {currentJob && currentJob.status !== 'completed' && (
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-gray-300">Trạng thái xử lý</span>
+                <span
+                  className={clsx(
+                    'px-3 py-1 rounded-full text-xs font-medium',
+                    {
+                      'bg-yellow-500/20 text-yellow-300': currentJob.status === 'pending',
+                      'bg-blue-500/20 text-blue-300':
+                        currentJob.status === 'processing' || currentJob.status === 'downloading',
+                      'bg-green-500/20 text-green-300': currentJob.status === 'completed',
+                      'bg-red-500/20 text-red-300': currentJob.status === 'failed',
+                    }
+                  )}
+                >
+                  {currentJob.status}
+                </span>
+              </div>
+
+              <div className="h-2 bg-gray-700 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                  style={{ width: `${currentJob.progress}%` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-400">{currentJob.current_step}</span>
+                <span className="text-purple-400">{currentJob.progress}%</span>
+              </div>
+
+              {currentJob.error_message && (
+                <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <p className="text-sm text-red-300">{currentJob.error_message}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Quick Tips */}
+          {!currentJob && !videoUrl && (
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20">
+              <h3 className="text-sm font-semibold text-blue-300 mb-2">💡 Mẹo sử dụng</h3>
+              <ul className="text-xs text-gray-400 space-y-1">
+                <li>• Nhập URL video từ YouTube, TikTok, Instagram...</li>
+                <li>• Chọn các tùy chọn xử lý bên trái</li>
+                <li>• Video đã xử lý sẽ hiển thị tại đây</li>
+                <li>• Sử dụng EOA Chat (góc phải dưới) để tạo nội dung AI</li>
+              </ul>
+            </div>
+          )}
         </div>
       </main>
 
@@ -262,4 +341,3 @@ export default function HomePage() {
     </div>
   );
 }
-

@@ -51,6 +51,33 @@ video-tool/
 └── docs/                # Documentation
 ```
 
+## 🧭 Codebase Overview
+
+### Frontend (Next.js)
+- **Entry**: `frontend/src/app/page.tsx` renders the main AI workspace UI with tabs (reup, studio, story, series, highlight, split-screen, aspect ratio, TTS).
+- **State & API**: `frontend/src/lib/store.ts` (Zustand UI/job state) and `frontend/src/lib/api-client.ts` (REST client for FastAPI endpoints).
+- **Core UI Components**: `frontend/src/components/*` for video preview/player, feature forms, and AI assistant widgets.
+
+### Backend (FastAPI)
+- **App bootstrap**: `backend/app/main.py` configures FastAPI, CORS, static processed media, and health checks.
+- **API routes**: `backend/app/api/endpoints.py` exposes video processing, TTS, highlights, aspect ratio conversion, split-screen merge, and job tracking endpoints.
+- **Services**: `backend/app/services/*` implements FFmpeg-powered editing, audio mixing, highlight extraction, aspect ratio conversion, and AI services (TTS, transcription, story generation).
+
+### Node Packages (Modular services)
+- **API server**: `packages/api/src/server.ts` exposes a separate Express API for download/edit/upload workflows.
+- **Core types & orchestrator**: `packages/core` defines shared interfaces, config validation, and job orchestration scaffolding.
+- **Downloader/Editor/Uploader**: `packages/downloader`, `packages/editor`, `packages/uploader` encapsulate platform-specific capabilities.
+
+## 🔗 Open-source & Free Video APIs/Tools
+
+Use these to build/extend video editing, audio mixing, or muting workflows:
+- **FFmpeg** (open-source) — CLI + libraries for editing, mixing, muting, and transcode: https://ffmpeg.org/
+- **GStreamer** (open-source) — multimedia pipeline framework and API for audio/video processing: https://gstreamer.freedesktop.org/
+- **Auto-Editor** (open-source) — CLI automation for trimming and audio muting/silence removal: https://auto-editor.com/
+- **OpenShot** (open-source) — editor with Python API for automated editing tasks: https://www.openshot.org/
+- **Shotstack** (free tier API) — cloud video automation, audio mix/mute: https://shotstack.io/
+- **Cloudinary Video API** (free tier) — video transforms and audio handling: https://cloudinary.com/documentation/video_manipulation_and_delivery
+
 ## 🛠️ Installation
 
 ### Prerequisites
