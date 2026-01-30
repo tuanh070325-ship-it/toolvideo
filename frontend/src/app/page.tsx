@@ -94,6 +94,44 @@ export default function HomePage() {
     { key: 'tts' as TabKey, label: 'TTS', icon: Settings, description: 'Cài đặt giọng nói AI (Edge, ViettelAI, FPT, ElevenLabs...)' },
   ];
 
+  const handleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    tabKey: TabKey,
+  ) => {
+    const currentIndex = tabs.findIndex((tab) => tab.key === tabKey);
+    const lastIndex = tabs.length - 1;
+    const nextIndex = () => (currentIndex + 1 > lastIndex ? 0 : currentIndex + 1);
+    const prevIndex = () => (currentIndex - 1 < 0 ? lastIndex : currentIndex - 1);
+
+    let targetIndex: number | null = null;
+
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        targetIndex = nextIndex();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        targetIndex = prevIndex();
+        break;
+      case 'Home':
+        targetIndex = 0;
+        break;
+      case 'End':
+        targetIndex = lastIndex;
+        break;
+      default:
+        break;
+    }
+
+    if (targetIndex !== null) {
+      event.preventDefault();
+      const nextTab = tabs[targetIndex];
+      setSelectedTab(nextTab.key);
+      document.getElementById(`tab-${nextTab.key}`)?.focus();
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900">
@@ -148,14 +186,17 @@ export default function HomePage() {
         {/* Left Panel - Settings/Features */}
         <div className="space-y-6">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/20">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="tablist" aria-label="Tính năng video">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
                   role="tab"
+                  id={`tab-${tab.key}`}
                   aria-selected={selectedTab === tab.key}
                   aria-controls={`tab-panel-${tab.key}`}
+                  tabIndex={selectedTab === tab.key ? 0 : -1}
                   onClick={() => setSelectedTab(tab.key)}
+                  onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
                   className={clsx(
                     'group flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all',
                     selectedTab === tab.key
@@ -198,6 +239,7 @@ export default function HomePage() {
             <div
               role="tabpanel"
               id={`tab-panel-${selectedTab}`}
+              aria-labelledby={`tab-${selectedTab}`}
               className="space-y-6"
             >
               {selectedTab === 'reup' && <ReupVideoFeature />}
