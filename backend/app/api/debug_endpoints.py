@@ -87,6 +87,7 @@ class SystemDiagnostics(BaseModel):
 _log_store: List[dict] = []
 _pipeline_status: dict = {}
 MAX_LOGS = 1000
+MAX_PIPELINE_JOBS = 100  # Limit pipeline status storage
 
 
 def add_log(
@@ -119,8 +120,14 @@ def add_log(
 
 
 def update_pipeline_status(job_id: str, status: dict):
-    """Update pipeline status"""
+    """Update pipeline status with size limit"""
     _pipeline_status[job_id] = status
+    
+    # Trim if exceeds max (remove oldest entries)
+    if len(_pipeline_status) > MAX_PIPELINE_JOBS:
+        oldest_keys = sorted(_pipeline_status.keys())[:len(_pipeline_status) - MAX_PIPELINE_JOBS]
+        for key in oldest_keys:
+            _pipeline_status.pop(key, None)
 
 
 def get_pipeline_status(job_id: str) -> Optional[dict]:
@@ -149,12 +156,22 @@ async def get_logs(
     # Filter by timestamp
     if since:
         try:
-            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
-            logs = [
-                l for l in logs 
-                if datetime.fromisoformat(l["timestamp"].replace("Z", "+00:00")) > since_dt
-            ]
-        except ValueError:
+            # Handle both 'Z' suffix and '+00:00' format
+            since_normalized = since.rstrip('Z')
+            if '+' not in since_normalized and '-' not in since_normalized[-6:]:
+                since_normalized += '+00:00'
+            since_dt = datetime.fromisoformat(since_normalized)
+            
+            filtered_logs = []
+            for l in logs:
+                ts = l["timestamp"].rstrip('Z')
+                if '+' not in ts and '-' not in ts[-6:]:
+                    ts += '+00:00'
+                log_dt = datetime.fromisoformat(ts)
+                if log_dt > since_dt:
+                    filtered_logs.append(l)
+            logs = filtered_logs
+        except (ValueError, TypeError):
             pass
     
     return logs
@@ -174,19 +191,27 @@ async def stream_logs(
     """Stream logs in real-time using Server-Sent Events"""
     async def event_generator():
         last_index = len(_log_store)
+        max_idle_count = 600  # ~5 minutes of idle time before closing
+        idle_count = 0
         
-        while True:
+        while idle_count < max_idle_count:
             # Check for new logs
             if len(_log_store) > last_index:
                 new_logs = _log_store[last_index:]
                 last_index = len(_log_store)
+                idle_count = 0  # Reset idle counter
                 
                 for log in new_logs:
                     if level and log["level"] != level:
                         continue
                     yield f"data: {json.dumps(log)}\n\n"
+            else:
+                idle_count += 1
             
             await asyncio.sleep(0.5)
+        
+        # Send close event when timing out
+        yield f"event: close\ndata: {json.dumps({'reason': 'timeout'})}\n\n"
     
     return StreamingResponse(
         event_generator(),
@@ -226,6 +251,7 @@ async def get_system_diagnostics():
     """Get system diagnostics information"""
     import sys
     import subprocess
+    import time as time_module
     
     diagnostics = SystemDiagnostics(
         python_version=sys.version,
@@ -237,7 +263,7 @@ async def get_system_diagnostics():
         diagnostics.cpu_percent = psutil.cpu_percent()
         diagnostics.memory_percent = psutil.virtual_memory().percent
         diagnostics.disk_usage_percent = psutil.disk_usage('/').percent
-        diagnostics.uptime_seconds = psutil.time.time() - psutil.boot_time()
+        diagnostics.uptime_seconds = time_module.time() - psutil.boot_time()
     except ImportError:
         pass
     

@@ -38,18 +38,23 @@ function DebugLogPanelWrapper() {
 
   // Fetch initial logs and set up streaming
   useEffect(() => {
+    let isActive = true;
+    let eventSource: EventSource | null = null;
+
     // Fetch existing logs
     const fetchLogs = async () => {
       try {
         const data = await apiClient.getDebugLogs({ limit: 50 });
-        data.forEach((log: any) => {
-          addLog(log.level, log.message, {
-            stage: log.stage,
-            details: log.details,
-            duration: log.duration,
+        if (isActive) {
+          data.forEach((log: any) => {
+            addLog(log.level, log.message, {
+              stage: log.stage,
+              details: log.details,
+              duration: log.duration,
+            });
           });
-        });
-      } catch (error) {
+        }
+      } catch {
         // Silently fail if debug endpoint not available
       }
     };
@@ -57,29 +62,40 @@ function DebugLogPanelWrapper() {
     fetchLogs();
 
     // Set up SSE log streaming
-    let eventSource: EventSource | null = null;
     try {
       eventSource = apiClient.createLogStream();
       eventSource.onmessage = (event) => {
-        const log = JSON.parse(event.data);
-        addLog(log.level, log.message, {
-          stage: log.stage,
-          details: log.details,
-          duration: log.duration,
-        });
+        if (isActive) {
+          const log = JSON.parse(event.data);
+          addLog(log.level, log.message, {
+            stage: log.stage,
+            details: log.details,
+            duration: log.duration,
+          });
+        }
       };
       eventSource.onerror = () => {
-        // Silently handle SSE errors
-        eventSource?.close();
+        // Close on error to prevent reconnection loops
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
       };
-    } catch (error) {
+    } catch {
       // SSE not supported or not available
     }
 
     return () => {
-      eventSource?.close();
+      isActive = false;
+      if (eventSource) {
+        try {
+          eventSource.close();
+        } catch {
+          // Ignore close errors
+        }
+      }
     };
-  }, []);
+  }, [addLog]);
 
   const handleClear = async () => {
     clearLogs();

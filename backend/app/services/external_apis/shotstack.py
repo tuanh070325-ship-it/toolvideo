@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from app.core.logger import logger
 from app.core.config import settings
@@ -184,7 +184,7 @@ class ShotstackClient(BaseAPIClient):
     async def wait_for_render(
         self,
         render_id: str,
-        on_progress: Optional[callable] = None,
+        on_progress: Optional[Callable[[ShotstackRenderResult], None]] = None,
     ) -> ShotstackRenderResult:
         """
         Wait for a render to complete.
@@ -222,7 +222,7 @@ class ShotstackClient(BaseAPIClient):
         self,
         timeline: Dict[str, Any],
         output: Optional[Dict[str, Any]] = None,
-        on_progress: Optional[callable] = None,
+        on_progress: Optional[Callable[[ShotstackRenderResult], None]] = None,
     ) -> ShotstackRenderResult:
         """
         Submit a render and wait for completion.

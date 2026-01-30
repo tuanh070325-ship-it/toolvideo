@@ -285,7 +285,8 @@ class BasePipelineStage(ABC):
             stage_progress.message = f"Completed {self.name}"
             
             context.pipeline_progress.completed_stages += 1
-            context.log("info", f"Stage {self.name} completed in {stage_progress.duration_seconds:.2f}s")
+            duration = stage_progress.duration_seconds
+            context.log("info", f"Stage {self.name} completed in {duration:.2f}s" if duration else f"Stage {self.name} completed")
             
             await context.progress_callback.update_async(context.pipeline_progress)
             
@@ -412,9 +413,10 @@ class VideoPipeline:
             context.pipeline_progress.end_time = datetime.now(timezone.utc)
             context.pipeline_progress.current_stage = None
             
+            duration = context.pipeline_progress.duration_seconds
             logger.info(
                 f"[Pipeline:{self.name}] Job {job_id} completed in "
-                f"{context.pipeline_progress.duration_seconds:.2f}s"
+                f"{duration:.2f}s" if duration else f"[Pipeline:{self.name}] Job {job_id} completed"
             )
             
             return {
