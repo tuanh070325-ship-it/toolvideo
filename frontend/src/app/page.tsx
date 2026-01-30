@@ -28,7 +28,79 @@ import { AspectRatioFeature } from '@/components/features/AspectRatioFeature';
 import { TTSSettings } from '@/components/TTSSettings';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { EOAChatbot } from '@/components/EOAChatbot';
+import { DebugLogPanel, useDebugLogs, LogEntry, PipelineProgress } from '@/components/ui/DebugLogPanel';
 import clsx from 'clsx';
+
+// Wrapper component for Debug Log Panel with API integration
+function DebugLogPanelWrapper() {
+  const { logs, pipelineProgress, setPipelineProgress, addLog, clearLogs } = useDebugLogs();
+  const [debugMode, setDebugMode] = useState(false);
+
+  // Fetch initial logs and set up streaming
+  useEffect(() => {
+    // Fetch existing logs
+    const fetchLogs = async () => {
+      try {
+        const data = await apiClient.getDebugLogs({ limit: 50 });
+        data.forEach((log: any) => {
+          addLog(log.level, log.message, {
+            stage: log.stage,
+            details: log.details,
+            duration: log.duration,
+          });
+        });
+      } catch (error) {
+        // Silently fail if debug endpoint not available
+      }
+    };
+
+    fetchLogs();
+
+    // Set up SSE log streaming
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = apiClient.createLogStream();
+      eventSource.onmessage = (event) => {
+        const log = JSON.parse(event.data);
+        addLog(log.level, log.message, {
+          stage: log.stage,
+          details: log.details,
+          duration: log.duration,
+        });
+      };
+      eventSource.onerror = () => {
+        // Silently handle SSE errors
+        eventSource?.close();
+      };
+    } catch (error) {
+      // SSE not supported or not available
+    }
+
+    return () => {
+      eventSource?.close();
+    };
+  }, []);
+
+  const handleClear = async () => {
+    clearLogs();
+    try {
+      await apiClient.clearDebugLogs();
+    } catch (error) {
+      // Silently fail
+    }
+  };
+
+  return (
+    <DebugLogPanel
+      logs={logs}
+      pipelineProgress={pipelineProgress}
+      onClear={handleClear}
+      debugMode={debugMode}
+      onDebugModeChange={setDebugMode}
+      defaultExpanded={false}
+    />
+  );
+}
 
 type TabKey = 'reup' | 'studio' | 'story' | 'series' | 'highlight' | 'merge' | 'aspect' | 'tts';
 
@@ -253,6 +325,11 @@ export default function HomePage() {
                 </ul>
               </div>
             )}
+
+            {/* Debug Log Panel */}
+            <div className="mt-4">
+              <DebugLogPanelWrapper />
+            </div>
           </div>
         </div>
       </main>

@@ -362,6 +362,47 @@ class APIClient {
     });
     return response.data;
   }
+
+  // ==================== DEBUG & LOGS ====================
+
+  async getDebugLogs(options?: {
+    limit?: number;
+    level?: string;
+    stage?: string;
+    since?: string;
+  }) {
+    const { data } = await this.client.get('/debug/logs', { params: options });
+    return data;
+  }
+
+  async clearDebugLogs() {
+    const { data } = await this.client.delete('/debug/logs');
+    return data;
+  }
+
+  async getPipelineStatus(jobId: string) {
+    const { data } = await this.client.get(`/debug/pipeline/${jobId}`);
+    return data;
+  }
+
+  async getDebugConfig() {
+    const { data } = await this.client.get('/debug/config');
+    return data;
+  }
+
+  async getSystemDiagnostics() {
+    const { data } = await this.client.get('/debug/diagnostics');
+    return data;
+  }
+
+  // Create EventSource for log streaming
+  createLogStream(options?: { level?: string }): EventSource {
+    const params = new URLSearchParams();
+    if (options?.level) params.set('level', options.level);
+    
+    const url = `${API_BASE_URL}/debug/logs/stream?${params.toString()}`;
+    return new EventSource(url);
+  }
 }
 
 export const apiClient = new APIClient();

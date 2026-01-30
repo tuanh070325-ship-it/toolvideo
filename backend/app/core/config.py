@@ -126,6 +126,17 @@ class Settings(BaseSettings):
     CUSTOM_AI_URL: Optional[str] = Field(default=None, env="CUSTOM_AI_URL")
     CUSTOM_AI_MODEL: str = Field(default="custom-model", env="CUSTOM_AI_MODEL")
 
+    # ==================== EXTERNAL VIDEO APIs ====================
+    # Shotstack - Video Rendering API (250 free renders/month)
+    SHOTSTACK_API_KEY: Optional[str] = Field(default=None, env="SHOTSTACK_API_KEY")
+    SHOTSTACK_SANDBOX: bool = Field(default=True, env="SHOTSTACK_SANDBOX")  # Use sandbox for testing
+    
+    # Pexels - Stock Media API (200 requests/hour free)
+    PEXELS_API_KEY: Optional[str] = Field(default=None, env="PEXELS_API_KEY")
+    
+    # Pixabay - Stock Media API (backup for Pexels)
+    PIXABAY_API_KEY: Optional[str] = Field(default=None, env="PIXABAY_API_KEY")
+
     # ==================== AUDIO SETTINGS ====================
     ENABLE_BGM: bool = Field(default=True, env="ENABLE_BGM")
     BGM_VOLUME: float = Field(default=0.15, env="BGM_VOLUME")  # Default background music volume
