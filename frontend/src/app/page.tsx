@@ -152,6 +152,9 @@ export default function HomePage() {
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
+                  role="tab"
+                  aria-selected={selectedTab === tab.key}
+                  aria-controls={`tab-panel-${tab.key}`}
                   onClick={() => setSelectedTab(tab.key)}
                   className={clsx(
                     'group flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all',
@@ -182,7 +185,7 @@ export default function HomePage() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-black/20">
             <div className="mb-6 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold">Tuỳ chỉnh nhanh</h2>
+                <h2 className="text-lg font-semibold">Tùy chỉnh nhanh</h2>
                 <p className="text-sm text-gray-400">
                   {tabs.find((t) => t.key === selectedTab)?.description}
                 </p>
@@ -192,7 +195,11 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="space-y-6">
+            <div
+              role="tabpanel"
+              id={`tab-panel-${selectedTab}`}
+              className="space-y-6"
+            >
               {selectedTab === 'reup' && <ReupVideoFeature />}
               {selectedTab === 'studio' && <StudioFeature />}
               {selectedTab === 'story' && <StoryVideoFeature />}
