@@ -1,0 +1,76 @@
+{
+    "name": "Complete Video Pipeline",
+    "description": "Download → Trim → Resize workflow",
+    "nodes": [
+        {
+            "id": "download_1",
+            "type": "VideoDownload",
+            "inputs": {
+                "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "platform": "youtube"
+            },
+            "outputs": {
+                "video_path": ""
+            },
+            "position": {
+                "x": 100,
+                "y": 100
+            }
+        },
+        {
+            "id": "trim_1",
+            "type": "VideoTrim",
+            "inputs": {
+                "video_path": "",
+                "start_time": 10,
+                "end_time": 40
+            },
+            "outputs": {
+                "output_path": "data/processed/trimmed.mp4"
+            },
+            "position": {
+                "x": 300,
+                "y": 100
+            }
+        },
+        {
+            "id": "resize_1",
+            "type": "VideoResize",
+            "inputs": {
+                "video_path": "",
+                "width": 1080,
+                "height": 1920
+            },
+            "outputs": {
+                "output_path": "data/processed/final_vertical.mp4"
+            },
+            "position": {
+                "x": 500,
+                "y": 100
+            }
+        }
+    ],
+    "connections": [
+        {
+            "source_node": "download_1",
+            "source_output": "video_path",
+            "target_node": "trim_1",
+            "target_input": "video_path"
+        },
+        {
+            "source_node": "trim_1",
+            "source_output": "output_path",
+            "target_node": "resize_1",
+            "target_input": "video_path"
+        }
+    ],
+    "metadata": {
+        "category": "complete_pipeline",
+        "tags": [
+            "download",
+            "trim",
+            "resize",
+            "youtube"
+        ]
+    }
+}

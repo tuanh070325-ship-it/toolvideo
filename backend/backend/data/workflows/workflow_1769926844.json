@@ -1,0 +1,33 @@
+{
+  "id": "workflow_1769926844",
+  "name": "Trim TikTok Video",
+  "description": "Cut video to first 30 seconds",
+  "nodes": [
+    {
+      "id": "trim_node_1",
+      "type": "VideoTrim",
+      "inputs": {
+        "video_path": "data/downloads/tiktok_1769926054.mp4",
+        "start_time": 0,
+        "end_time": 30
+      },
+      "outputs": {
+        "output_path": "data/processed/tiktok_trimmed.mp4"
+      },
+      "position": {
+        "x": 100.0,
+        "y": 100.0
+      }
+    }
+  ],
+  "connections": [],
+  "metadata": {
+    "category": "video_editing",
+    "tags": [
+      "trim",
+      "tiktok"
+    ]
+  },
+  "created_at": "2026-02-01T13:20:44.799626",
+  "updated_at": "2026-02-01T13:20:44.799626"
+}

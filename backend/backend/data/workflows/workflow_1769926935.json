@@ -1,0 +1,27 @@
+{
+  "id": "workflow_1769926935",
+  "name": "Trim TikTok Video",
+  "description": null,
+  "nodes": [
+    {
+      "id": "trim_node_1",
+      "type": "VideoTrim",
+      "inputs": {
+        "video_path": "data/downloads/tiktok_1769926054.mp4",
+        "start_time": 0,
+        "end_time": 30
+      },
+      "outputs": {
+        "output_path": "data/processed/trimmed.mp4"
+      },
+      "position": {
+        "x": 100.0,
+        "y": 100.0
+      }
+    }
+  ],
+  "connections": [],
+  "metadata": {},
+  "created_at": "2026-02-01T13:22:15.688475",
+  "updated_at": "2026-02-01T13:22:15.688475"
+}

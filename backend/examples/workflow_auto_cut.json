@@ -1,0 +1,33 @@
+{
+    "name": "Auto Cut Highlights",
+    "description": "Extract 3 best moments from video",
+    "nodes": [
+        {
+            "id": "cut_node",
+            "type": "HighlightExtraction",
+            "inputs": {
+                "video_path": "data/downloads/test_video.mp4",
+                "num_highlights": 3,
+                "duration": 60,
+                "style": "engaging",
+                "provider": "auto"
+            },
+            "outputs": {
+                "highlight_path": "data/processed/highlights.mp4",
+                "segments": []
+            },
+            "position": {
+                "x": 100,
+                "y": 100
+            }
+        }
+    ],
+    "connections": [],
+    "metadata": {
+        "category": "auto_cut",
+        "tags": [
+            "highlight",
+            "ai"
+        ]
+    }
+}

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     TEMP_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "temp")
     JOBS_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "jobs")
     PROCESSED_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "processed")
+    DOWNLOADS_DIR: Path = Field(default_factory=lambda: _backend_dir() / "data" / "downloads")
     UPLOAD_DIR: Path = Field(default_factory=lambda: _backend_dir() / "uploads")
     LOG_DIR: Path = Field(default_factory=lambda: _backend_dir() / "logs")
     LOG_FILE: str = Field(default="logs/app.log", env="LOG_FILE")
@@ -100,6 +101,17 @@ class Settings(BaseSettings):
     # Speech Recognition
     WHISPER_MODEL: str = Field(default="base", env="WHISPER_MODEL")  # tiny, base, small, medium, large
     DEEPGRAM_API_KEY: Optional[str] = Field(default=None, env="DEEPGRAM_API_KEY")
+
+    # ==================== MONITORING & MEMORY ====================
+    # Opik (LLM Evaluation)
+    OPIK_API_KEY: Optional[str] = Field(default=None, env="OPIK_API_KEY")
+    OPIK_WORKSPACE: str = Field(default="default", env="OPIK_WORKSPACE")
+    OPIK_PROJECT_NAME: str = Field(default="video-reup-tool", env="OPIK_PROJECT_NAME")
+
+    # Rememberall (ChromaDB Memory)
+    CHROMA_PERSIST_DIRECTORY: Path = Field(default_factory=lambda: _backend_dir() / "data" / "chroma_db")
+    CHROMA_COLLECTION_NAME: str = Field(default="video_tool_memory", env="CHROMA_COLLECTION_NAME")
+
 
     # ==================== TTS SETTINGS ====================
     TTS_PROVIDER: str = Field(default="edge", env="TTS_PROVIDER")  # edge, openai, google, elevenlabs, viettel, fpt, gtts

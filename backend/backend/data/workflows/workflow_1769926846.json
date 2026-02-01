@@ -1,0 +1,79 @@
+{
+  "id": "workflow_1769926846",
+  "name": "Complete Video Pipeline",
+  "description": "Download \u2192 Trim \u2192 Resize workflow",
+  "nodes": [
+    {
+      "id": "download_1",
+      "type": "VideoDownload",
+      "inputs": {
+        "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "platform": "youtube"
+      },
+      "outputs": {
+        "video_path": ""
+      },
+      "position": {
+        "x": 100.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "trim_1",
+      "type": "VideoTrim",
+      "inputs": {
+        "video_path": "",
+        "start_time": 10,
+        "end_time": 40
+      },
+      "outputs": {
+        "output_path": "data/processed/trimmed.mp4"
+      },
+      "position": {
+        "x": 300.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": "resize_1",
+      "type": "VideoResize",
+      "inputs": {
+        "video_path": "",
+        "width": 1080,
+        "height": 1920
+      },
+      "outputs": {
+        "output_path": "data/processed/final_vertical.mp4"
+      },
+      "position": {
+        "x": 500.0,
+        "y": 100.0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "source_node": "download_1",
+      "source_output": "video_path",
+      "target_node": "trim_1",
+      "target_input": "video_path"
+    },
+    {
+      "source_node": "trim_1",
+      "source_output": "output_path",
+      "target_node": "resize_1",
+      "target_input": "video_path"
+    }
+  ],
+  "metadata": {
+    "category": "complete_pipeline",
+    "tags": [
+      "download",
+      "trim",
+      "resize",
+      "youtube"
+    ]
+  },
+  "created_at": "2026-02-01T13:20:46.865685",
+  "updated_at": "2026-02-01T13:20:46.865685"
+}

@@ -1,21 +1,24 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*. {js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
-  theme: {
-    extend: {
-      colors: {
-        primary: '#8B5CF6',
-        secondary: '#6366F1',
-      },
-      animation: {
-        'spin-slow': 'spin 3s linear infinite',
-      },
+    content: [
+        './app/**/*.{js,ts,jsx,tsx,mdx}',
+        './components/**/*.{js,ts,jsx,tsx,mdx}',
+    ],
+    theme: {
+        extend: {
+            colors: {
+                border: '#e5e7eb',
+                background: '#ffffff',
+                foreground: '#111827',
+                muted: '#f9fafb',
+                'muted-foreground': '#6b7280',
+                accent: '#f3f4f6',
+                'accent-foreground': '#111827',
+            },
+            borderRadius: {
+                DEFAULT: '0px',
+            },
+        },
     },
-  },
-  plugins:  [],
-  darkMode: 'class',
-};
+    plugins: [],
+}

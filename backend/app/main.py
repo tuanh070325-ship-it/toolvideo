@@ -102,10 +102,23 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from app.api.comfy_routes import router as comfy_router
+
 if os.path.exists("data/processed"):
     app.mount("/processed", StaticFiles(directory="data/processed"), name="processed")
 
 app.include_router(api_router, prefix="/api")
+app.include_router(comfy_router)
+
+# Mount ComfyUI frontend
+comfy_web_path = Path("backend/comfy_web")
+ensure_dirs([comfy_web_path]) # Ensure it exists to avoid errors if not yet downloaded
+if comfy_web_path.exists():
+    app.mount("/comfyui", StaticFiles(directory=str(comfy_web_path), html=True), name="comfyui")
+    logger.info(f"Mounted ComfyUI frontend at /comfyui")
+
 
 
 @app.get("/")
