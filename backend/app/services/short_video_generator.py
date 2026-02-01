@@ -312,7 +312,7 @@ Output the script only, no additional explanations."""
             voice = voice or default_voices.get(language, default_voices['en'])
             
             tts = await get_tts_provider("edge")
-            output_path = self.temp_dir / f"narration_{uuid.uuid4()[:8]}.mp3"
+            output_path = self.temp_dir / f"narration_{str(uuid.uuid4())[:8]}.mp3"
             
             audio_path, duration = await tts.synthesize(
                 text=script,

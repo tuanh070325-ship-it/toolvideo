@@ -346,7 +346,8 @@ class VideoStyleTransferService:
             result = cv2.stylization(img, sigma_s=60, sigma_r=0.6)
             
         elif style == 'oil_painting':
-            result = cv2.xphoto.oilPainting(img, 7, 1) if hasattr(cv2, 'xphoto') else img
+            has_oil_painting = hasattr(cv2, 'xphoto') and hasattr(cv2.xphoto, 'oilPainting')
+            result = cv2.xphoto.oilPainting(img, 7, 1) if has_oil_painting else img
             if result is img:
                 # Fallback oil painting effect
                 result = cv2.edgePreservingFilter(img, flags=2, sigma_s=100, sigma_r=0.8)

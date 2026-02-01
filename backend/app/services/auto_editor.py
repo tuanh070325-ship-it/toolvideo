@@ -288,7 +288,7 @@ class AutoEditorService:
             filter_parts = []
             
             for i, seg in enumerate(segments):
-                temp_file = self.temp_dir / f"seg_{uuid.uuid4()[:8]}_{i}.mp4"
+                temp_file = self.temp_dir / f"seg_{str(uuid.uuid4())[:8]}_{i}.mp4"
                 temp_parts.append(temp_file)
                 
                 cmd = [
@@ -314,7 +314,7 @@ class AutoEditorService:
                 temp_parts[0].rename(output_path)
             else:
                 # Create concat file
-                concat_file = self.temp_dir / f"concat_{uuid.uuid4()[:8]}.txt"
+                concat_file = self.temp_dir / f"concat_{str(uuid.uuid4())[:8]}.txt"
                 with open(concat_file, 'w') as f:
                     for part in temp_parts:
                         f.write(f"file '{part}'\n")
@@ -374,7 +374,7 @@ class AutoEditorService:
             
             # Process each segment
             for i, seg in enumerate(all_segments):
-                temp_file = self.temp_dir / f"speed_seg_{uuid.uuid4()[:8]}_{i}.mp4"
+                temp_file = self.temp_dir / f"speed_seg_{str(uuid.uuid4())[:8]}_{i}.mp4"
                 temp_parts.append(temp_file)
                 
                 if seg['type'] == 'silence' and seg['duration'] > 0.1:
@@ -416,7 +416,7 @@ class AutoEditorService:
                 return {"success": False, "error": "No valid segments created"}
             
             # Concatenate
-            concat_file = self.temp_dir / f"concat_{uuid.uuid4()[:8]}.txt"
+            concat_file = self.temp_dir / f"concat_{str(uuid.uuid4())[:8]}.txt"
             with open(concat_file, 'w') as f:
                 for part in temp_parts:
                     f.write(f"file '{part}'\n")

@@ -172,7 +172,7 @@ class VideoTranslationService:
     
     async def _extract_audio(self, video_path: Path) -> Path:
         """Extract audio from video"""
-        audio_path = self.temp_dir / f"audio_{uuid.uuid4()[:8]}.wav"
+        audio_path = self.temp_dir / f"audio_{str(uuid.uuid4())[:8]}.wav"
         
         cmd = [
             "ffmpeg", "-y",
@@ -262,7 +262,7 @@ Text to translate:
             from app.services.ai.tts_provider import get_tts_provider
             
             tts = await get_tts_provider("edge")
-            output_path = self.temp_dir / f"tts_{uuid.uuid4()[:8]}.mp3"
+            output_path = self.temp_dir / f"tts_{str(uuid.uuid4())[:8]}.mp3"
             
             audio_path, duration = await tts.synthesize(
                 text=text,
@@ -299,7 +299,7 @@ Text to translate:
     async def _mix_audio(self, vocals: Path, bgm: Path) -> Path:
         """Mix dubbed vocals with background music"""
         try:
-            output_path = self.temp_dir / f"mixed_{uuid.uuid4()[:8]}.mp3"
+            output_path = self.temp_dir / f"mixed_{str(uuid.uuid4())[:8]}.mp3"
             
             cmd = [
                 "ffmpeg", "-y",
