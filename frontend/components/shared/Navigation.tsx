@@ -12,6 +12,7 @@ export function Navigation() {
 
     const links = [
         { href: '/', label: 'Dashboard' },
+        { href: '/tools', label: '🛠️ Công cụ' },
         { href: '/workflows', label: 'Workflows' },
         { href: '/videos', label: 'Videos' },
         { href: '/generation', label: 'AI Generation' },
@@ -35,7 +36,7 @@ export function Navigation() {
                                     target={link.external ? "_blank" : undefined}
                                     className={cn(
                                         'px-4 py-2 text-sm font-medium transition-colors',
-                                        pathname === link.href
+                                        pathname === link.href || (link.href !== '/' && pathname?.startsWith(link.href))
                                             ? 'bg-gray-900 text-white'
                                             : 'text-gray-600 hover:bg-gray-100'
                                     )}
